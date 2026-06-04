@@ -5,15 +5,16 @@ substitutions:
   # --- Localização (Open-Meteo — grátis, sem API key) ---
   latitude:  "-26.3044"
   longitude: "-48.8487"
-  timezone:  "America/Sao_Paulo"
+  timezone:  "<-03>3"               # UTC-3 fixo (Joinville/BR, sem horário de verão)
 
-  # --- Pinos (Waveshare 7.5" V2 + ESP32-C3) ---
-  spi_clk:     GPIO6
-  spi_mosi:    GPIO7
-  epaper_cs:   GPIO2
+  # --- Pinos (Waveshare 7.5" V2 + Seeed XIAO ESP32-C3) ---
+  # D8=GPIO8 CLK | D10=GPIO10 MOSI | D3=GPIO5 CS | D2=GPIO4 DC | D1=GPIO3 RST | D0=GPIO2 BUSY
+  spi_clk:     GPIO8
+  spi_mosi:    GPIO10
+  epaper_cs:   GPIO5
   epaper_dc:   GPIO4
-  epaper_rst:  GPIO5
-  epaper_busy: GPIO3
+  epaper_rst:  GPIO3
+  epaper_busy: GPIO2
 
   # --- Integrações opcionais ---
   # Deixe vazio ("") para desabilitar; configure em secrets.yaml
@@ -65,16 +66,15 @@ time:
     servers:
       - pool.ntp.org
       - 1.br.pool.ntp.org
-    on_time:
-      # Atualiza o relógio a cada minuto
-      - seconds: 0
-        then:
-          - component.update: epaper_display
-      # Busca todos os dados a cada 20 minutos
-      - seconds: 0
-        minutes: /20
-        then:
-          - script.execute: fetch_all
+    on_time_sync:
+      then:
+        - logger.log: "NTP sincronizado"
+
+# ---------------------------------------------------------------------------
+interval:
+  - interval: 20min
+    then:
+      - script.execute: fetch_all
 
 # ---------------------------------------------------------------------------
 http_request:
@@ -216,8 +216,12 @@ script:
           then:
             - script.execute: fetch_tasks
             - script.wait:   fetch_tasks
-      - script.execute: fetch_companion
-      - script.wait:   fetch_companion
+      - if:
+          condition:
+            lambda: 'return std::string("${companion_url}") != "http://127.0.0.1:8765";'
+          then:
+            - script.execute: fetch_companion
+            - script.wait:   fetch_companion
       - component.update: epaper_display
 
   # ── Clima + Previsão (Open-Meteo) ──────────────────────────────────────
@@ -383,7 +387,7 @@ display:
     busy_pin:  ${epaper_busy}
     reset_pin: ${epaper_rst}
     model: 7.50inV2
-    update_interval: never   # controlado pelos scripts acima
+    update_interval: 60s
     rotation: 0°
     lambda: |-
       // ── Helpers ──────────────────────────────────────────────────────
