@@ -1,4 +1,5 @@
 secrets.yaml
+companion/config.yaml
 .esphome/
 build/
 __pycache__/

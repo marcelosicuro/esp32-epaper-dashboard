@@ -1,0 +1,25 @@
+# Companion — configuração
+# Copie para config.yaml e preencha seus dados
+
+port: 8765
+
+# Apple Reminders (lê via AppleScript — só macOS)
+reminders:
+  enabled: true
+  list: "Reminders"   # nome da lista no app Lembretes/Reminders
+
+# E-mail via IMAP
+email:
+  enabled: false       # mude para true e preencha abaixo
+
+  # Gmail:
+  imap_host: imap.gmail.com
+  imap_user: seuemail@gmail.com
+  imap_password: "sua-senha-de-app-gmail"   # https://myaccount.google.com/apppasswords
+  imap_folder: INBOX
+
+  # iCloud Mail:
+  # imap_host: imap.mail.me.com
+  # imap_user: seuemail@icloud.com
+  # imap_password: "senha-específica-de-app"  # em appleid.apple.com → Senhas de app
+  # imap_folder: INBOX
