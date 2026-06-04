@@ -3,8 +3,8 @@ substitutions:
   friendly_name: "Painel Pessoal"
 
   # --- Localização (Open-Meteo — grátis, sem API key) ---
-  latitude:  "-23.5505"
-  longitude: "-46.6333"
+  latitude:  "-26.3044"
+  longitude: "-48.8487"
   timezone:  "America/Sao_Paulo"
 
   # --- Pinos (Waveshare 7.5" V2 + ESP32-C3) ---
@@ -18,7 +18,7 @@ substitutions:
   # --- Integrações opcionais ---
   # Deixe vazio ("") para desabilitar; configure em secrets.yaml
   todoist_token: ""          # ou: !secret todoist_token
-  companion_url: ""          # ou: !secret companion_url  ex: http://192.168.1.10:8765
+  companion_url: "http://127.0.0.1:8765"  # troque pelo IP do seu Mac em secrets.yaml
 
 # ---------------------------------------------------------------------------
 esphome:
@@ -65,9 +65,6 @@ time:
     servers:
       - pool.ntp.org
       - 1.br.pool.ntp.org
-    on_time_sync:
-      then:
-        - component.update: epaper_display
     on_time:
       # Atualiza o relógio a cada minuto
       - seconds: 0
@@ -83,6 +80,7 @@ time:
 http_request:
   useragent: esphome/painel-pessoal
   timeout: 15s
+  verify_ssl: false
 
 # ---------------------------------------------------------------------------
 globals:
@@ -212,8 +210,12 @@ script:
       - script.wait:   fetch_weather
       - script.execute: fetch_rates
       - script.wait:   fetch_rates
-      - script.execute: fetch_tasks
-      - script.wait:   fetch_tasks
+      - if:
+          condition:
+            lambda: 'return strlen("${todoist_token}") > 0;'
+          then:
+            - script.execute: fetch_tasks
+            - script.wait:   fetch_tasks
       - script.execute: fetch_companion
       - script.wait:   fetch_companion
       - component.update: epaper_display
@@ -223,12 +225,9 @@ script:
     mode: single
     then:
       - http_request.get:
-          url: !lambda |-
-            return "https://api.open-meteo.com/v1/forecast"
-                   "?latitude=${latitude}&longitude=${longitude}"
-                   "&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m"
-                   "&daily=weather_code,temperature_2m_max,temperature_2m_min"
-                   "&wind_speed_unit=kmh&timezone=auto&forecast_days=4";
+          url: "https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min&wind_speed_unit=kmh&timezone=auto&forecast_days=4"
+          headers:
+            Accept-Encoding: identity
           capture_response: true
           on_response:
             then:
@@ -251,7 +250,6 @@ script:
                       auto codes = daily["weather_code"].as<JsonArray>();
                       auto maxs  = daily["temperature_2m_max"].as<JsonArray>();
                       auto mins  = daily["temperature_2m_min"].as<JsonArray>();
-                      // índice 0 = hoje, 1-3 = próximos dias
                       id(g_fc_code_0) = codes[1].as<int>(); id(g_fc_max_0) = maxs[1].as<float>(); id(g_fc_min_0) = mins[1].as<float>();
                       id(g_fc_code_1) = codes[2].as<int>(); id(g_fc_max_1) = maxs[2].as<float>(); id(g_fc_min_1) = mins[2].as<float>();
                       id(g_fc_code_2) = codes[3].as<int>(); id(g_fc_max_2) = maxs[3].as<float>(); id(g_fc_min_2) = mins[3].as<float>();
@@ -266,6 +264,8 @@ script:
     then:
       - http_request.get:
           url: "https://economia.awesomeapi.com.br/last/USD-BRL,BTC-BRL"
+          headers:
+            Accept-Encoding: identity
           capture_response: true
           on_response:
             then:
@@ -280,17 +280,14 @@ script:
                     return true;
                   });
 
-  # ── Tarefas (Todoist — opcional) ───────────────────────────────────────
+  # ── Tarefas Todoist — opcional (configura todoist_token em secrets.yaml)
   - id: fetch_tasks
     mode: single
     then:
-      - lambda: |-
-          // Pula se token não configurado
-          if (strlen("${todoist_token}") == 0) return;
       - http_request.get:
           url: "https://api.todoist.com/rest/v2/tasks?filter=today%7Coverdue"
           headers:
-            Authorization: !lambda return std::string("Bearer ${todoist_token}");
+            Authorization: "Bearer ${todoist_token}"
           capture_response: true
           on_response:
             then:
@@ -298,8 +295,10 @@ script:
                   if (response->status_code != 200) return;
                   id(g_task_0) = ""; id(g_task_1) = ""; id(g_task_2) = "";
                   id(g_task_count) = 0;
-                  json::parse_json(body, [](JsonArray arr) -> bool {
-                    for (auto task : arr) {
+                  // Todoist retorna array JSON na raiz — usa ArduinoJson diretamente
+                  DynamicJsonDocument doc(8192);
+                  if (deserializeJson(doc, body) == DeserializationError::Ok) {
+                    for (auto task : doc.as<JsonArray>()) {
                       std::string name = task["content"].as<std::string>();
                       if (name.length() > 36) name = name.substr(0, 33) + "...";
                       if      (id(g_task_count) == 0) id(g_task_0) = name;
@@ -308,17 +307,14 @@ script:
                       else break;
                       id(g_task_count)++;
                     }
-                    return true;
-                  });
+                  }
 
-  # ── Companion (Apple Reminders + E-mail — opcional) ───────────────────
+  # ── Companion — Apple Reminders + E-mail (configura companion_url em secrets.yaml)
   - id: fetch_companion
     mode: single
     then:
-      - lambda: |-
-          if (strlen("${companion_url}") == 0) return;
       - http_request.get:
-          url: !lambda return std::string("${companion_url}") + "/data.json";
+          url: "${companion_url}/data.json"
           capture_response: true
           on_response:
             then:
@@ -343,37 +339,35 @@ script:
 
 # ---------------------------------------------------------------------------
 font:
-  - file: "fonts/Roboto-Bold.ttf"
+  - file: "gfonts://Roboto@700"
     id: font_clock
     size: 78
     glyphs: "0123456789:"
 
-  - file: "fonts/Roboto-Bold.ttf"
+  - file: "gfonts://Roboto@700"
     id: font_temp
     size: 50
-    glyphs: "0123456789.,-°C"
+    glyphs: "0123456789.,°C%-"
 
-  - file: "fonts/Roboto-Regular.ttf"
+  - file: "gfonts://Roboto"
     id: font_body
     size: 22
-    glyphs: &pt >-
-      ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz
-      0123456789 .,:/°-%$€₿çãõáéíóúâêîôûàèìòùäëïöü-_()
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%$-_()çãõáéíóúâêîôûàèìòùäëïöü"
 
-  - file: "fonts/Roboto-Bold.ttf"
+  - file: "gfonts://Roboto@700"
     id: font_body_bold
     size: 22
-    glyphs: *pt
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%$-_()çãõáéíóúâêîôûàèìòùäëïöü"
 
-  - file: "fonts/Roboto-Regular.ttf"
+  - file: "gfonts://Roboto"
     id: font_small
     size: 18
-    glyphs: *pt
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%$-_()çãõáéíóúâêîôûàèìòùäëïöü"
 
-  - file: "fonts/Roboto-Light.ttf"
+  - file: "gfonts://Roboto@300"
     id: font_date
     size: 26
-    glyphs: *pt
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%$-_()çãõáéíóúâêîôûàèìòùäëïöü"
 
 # ---------------------------------------------------------------------------
 spi:
@@ -398,27 +392,17 @@ display:
       const int DIV1 = 315;   // divisória horizontal clima|tarefas
       const int DIV2 = 435;   // divisória horizontal tarefas|rodapé
 
+      // Converte WMO weather code para descrição em português
       auto wmo_pt = [](int c) -> const char* {
-        if (c == 0)                return "Céu limpo";
-        if (c <= 3)                return "Nublado";
-        if (c == 45 || c == 48)   return "Nevoeiro";
-        if (c >= 51 && c <= 55)   return "Garoa";
-        if (c >= 61 && c <= 65)   return "Chuva";
-        if (c >= 71 && c <= 77)   return "Neve";
-        if (c >= 80 && c <= 82)   return "Pancadas";
-        if (c == 95)              return "Tempestade";
-        if (c == 96 || c == 99)   return "Granizo";
-        return "—";
-      };
-
-      auto wmo_icon = [](int c) -> const char* {
-        if (c == 0)              return "[sol]";
-        if (c <= 2)              return "[sol/nuvem]";
-        if (c == 3)              return "[nublado]";
-        if (c >= 51 && c <= 67) return "[chuva]";
-        if (c >= 71 && c <= 77) return "[neve]";
-        if (c >= 80)             return "[tempestade]";
-        return "[nuvem]";
+        if (c == 0)              return "Ceu limpo";
+        if (c <= 3)              return "Nublado";
+        if (c == 45 || c == 48) return "Nevoeiro";
+        if (c >= 51 && c <= 55) return "Garoa";
+        if (c >= 61 && c <= 65) return "Chuva";
+        if (c >= 71 && c <= 77) return "Neve";
+        if (c >= 80 && c <= 82) return "Pancadas";
+        if (c >= 95)            return "Tempestade";
+        return "Variavel";
       };
 
       auto now = id(sntp_time).now();
@@ -467,20 +451,17 @@ display:
       it.line(DIVX, 235, W, 235);
 
       if (id(g_forecast_ok)) {
-        const char* label_dias[] = {"Amanhã", "Em 2 dias", "Em 3 dias"};
-        int codes[] = {id(g_fc_code_0), id(g_fc_code_1), id(g_fc_code_2)};
-        float maxs[] = {id(g_fc_max_0), id(g_fc_max_1), id(g_fc_max_2)};
-        float mins[] = {id(g_fc_min_0), id(g_fc_min_1), id(g_fc_min_2)};
+        it.printf(RX,       245, id(font_small), TextAlign::TOP_LEFT, "Amanha");
+        it.printf(RX + 105, 245, id(font_small), TextAlign::TOP_LEFT, "%s", wmo_pt(id(g_fc_code_0)));
+        it.printf(RW - 80,  245, id(font_small), TextAlign::TOP_RIGHT, "%.0f/%.0f C", id(g_fc_max_0), id(g_fc_min_0));
 
-        int fy = 245;
-        for (int i = 0; i < 3; i++) {
-          it.printf(RX,        fy + i*24, id(font_small), TextAlign::TOP_LEFT,
-                    "%-9s", label_dias[i]);
-          it.printf(RX + 105,  fy + i*24, id(font_small), TextAlign::TOP_LEFT,
-                    "%s", wmo_pt(codes[i]));
-          it.printf(RW - 80,   fy + i*24, id(font_small), TextAlign::TOP_RIGHT,
-                    "%.0f / %.0f°C", maxs[i], mins[i]);
-        }
+        it.printf(RX,       269, id(font_small), TextAlign::TOP_LEFT, "2 dias");
+        it.printf(RX + 105, 269, id(font_small), TextAlign::TOP_LEFT, "%s", wmo_pt(id(g_fc_code_1)));
+        it.printf(RW - 80,  269, id(font_small), TextAlign::TOP_RIGHT, "%.0f/%.0f C", id(g_fc_max_1), id(g_fc_min_1));
+
+        it.printf(RX,       293, id(font_small), TextAlign::TOP_LEFT, "3 dias");
+        it.printf(RX + 105, 293, id(font_small), TextAlign::TOP_LEFT, "%s", wmo_pt(id(g_fc_code_2)));
+        it.printf(RW - 80,  293, id(font_small), TextAlign::TOP_RIGHT, "%.0f/%.0f C", id(g_fc_max_2), id(g_fc_min_2));
       }
 
       // ── Linha divisória horizontal (clima | tarefas) ─────────────────
@@ -495,11 +476,15 @@ display:
                     ? "Configure Todoist ou Companion no secrets.yaml"
                     : "Nenhuma tarefa para hoje");
       } else {
-        std::string* tasks[] = {&id(g_task_0), &id(g_task_1), &id(g_task_2)};
-        for (int i = 0; i < id(g_task_count) && i < 3; i++) {
-          it.printf(PAD, DIV1 + 36 + i * 28, id(font_body), TextAlign::TOP_LEFT,
-                    "▢  %s", tasks[i]->c_str());
-        }
+        if (id(g_task_count) > 0)
+          it.printf(PAD, DIV1 + 36, id(font_body), TextAlign::TOP_LEFT,
+                    "[ ] %s", id(g_task_0).c_str());
+        if (id(g_task_count) > 1)
+          it.printf(PAD, DIV1 + 64, id(font_body), TextAlign::TOP_LEFT,
+                    "[ ] %s", id(g_task_1).c_str());
+        if (id(g_task_count) > 2)
+          it.printf(PAD, DIV1 + 92, id(font_body), TextAlign::TOP_LEFT,
+                    "[ ] %s", id(g_task_2).c_str());
       }
 
       // ── Linha divisória horizontal (tarefas | rodapé) ────────────────
