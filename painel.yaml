@@ -8,18 +8,12 @@ substitutions:
   timezone:  "America/Sao_Paulo"
 
   # --- Pinos (Waveshare 7.5" V2 + Seeed XIAO ESP32-C3) ---
-  # Pinout confirmado do YAML original do Home Assistant
   spi_clk:     GPIO8
   spi_mosi:    GPIO10
   epaper_cs:   GPIO3
   epaper_dc:   GPIO5
   epaper_rst:  GPIO2
   epaper_busy: GPIO4
-
-  # --- Integrações opcionais ---
-  # Deixe vazio ("") para desabilitar; configure em secrets.yaml
-  todoist_token: !secret todoist_token
-  companion_url: "http://127.0.0.1:8765"  # troque pelo IP do seu Mac em secrets.yaml
 
 # ---------------------------------------------------------------------------
 esphome:
@@ -118,7 +112,7 @@ globals:
     restore_value: false
     initial_value: 'false'
 
-  # Previsão 3 dias (índice 1=amanhã, 2=depois, 3=mais um)
+  # Previsão 5 dias (índice 1=amanhã, 2=2 dias, ..., 5=5 dias)
   - id: g_fc_code_0
     type: int
     restore_value: false
@@ -155,34 +149,34 @@ globals:
     type: float
     restore_value: false
     initial_value: '0.0'
+  - id: g_fc_code_3
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: g_fc_max_3
+    type: float
+    restore_value: false
+    initial_value: '0.0'
+  - id: g_fc_min_3
+    type: float
+    restore_value: false
+    initial_value: '0.0'
+  - id: g_fc_code_4
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: g_fc_max_4
+    type: float
+    restore_value: false
+    initial_value: '0.0'
+  - id: g_fc_min_4
+    type: float
+    restore_value: false
+    initial_value: '0.0'
   - id: g_forecast_ok
     type: bool
     restore_value: false
     initial_value: 'false'
-
-  # Tarefas (até 3)
-  - id: g_task_0
-    type: std::string
-    restore_value: false
-    initial_value: '""'
-  - id: g_task_1
-    type: std::string
-    restore_value: false
-    initial_value: '""'
-  - id: g_task_2
-    type: std::string
-    restore_value: false
-    initial_value: '""'
-  - id: g_task_count
-    type: int
-    restore_value: false
-    initial_value: '0'
-
-  # E-mail
-  - id: g_email_unread
-    type: int
-    restore_value: false
-    initial_value: '-1'
 
   # Cotações
   - id: g_usd_brl
@@ -210,7 +204,6 @@ globals:
 
 # ---------------------------------------------------------------------------
 script:
-  # Orquestra todas as buscas em sequência para poupar RAM
   - id: fetch_all
     mode: single
     then:
@@ -218,27 +211,15 @@ script:
       - script.wait:   fetch_weather
       - script.execute: fetch_rates
       - script.wait:   fetch_rates
-      - if:
-          condition:
-            lambda: 'return strlen("${todoist_token}") > 0;'
-          then:
-            - script.execute: fetch_tasks
-            - script.wait:   fetch_tasks
-      - if:
-          condition:
-            lambda: 'return std::string("${companion_url}") != "http://127.0.0.1:8765";'
-          then:
-            - script.execute: fetch_companion
-            - script.wait:   fetch_companion
       - component.update: epaper_display
 
-  # ── Clima + Previsão (Open-Meteo) ──────────────────────────────────────
+  # ── Clima + Previsão 5 dias (Open-Meteo) ───────────────────────────────
   - id: fetch_weather
     mode: restart
     then:
       - logger.log: "fetch_weather: iniciando..."
       - http_request.get:
-          url: "https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min&wind_speed_unit=kmh&timezone=auto&forecast_days=4"
+          url: "https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min&wind_speed_unit=kmh&timezone=auto&forecast_days=6"
           headers:
             Accept-Encoding: identity
           capture_response: true
@@ -267,6 +248,8 @@ script:
                       id(g_fc_code_0) = codes[1].as<int>(); id(g_fc_max_0) = maxs[1].as<float>(); id(g_fc_min_0) = mins[1].as<float>();
                       id(g_fc_code_1) = codes[2].as<int>(); id(g_fc_max_1) = maxs[2].as<float>(); id(g_fc_min_1) = mins[2].as<float>();
                       id(g_fc_code_2) = codes[3].as<int>(); id(g_fc_max_2) = maxs[3].as<float>(); id(g_fc_min_2) = mins[3].as<float>();
+                      id(g_fc_code_3) = codes[4].as<int>(); id(g_fc_max_3) = maxs[4].as<float>(); id(g_fc_min_3) = mins[4].as<float>();
+                      id(g_fc_code_4) = codes[5].as<int>(); id(g_fc_max_4) = maxs[5].as<float>(); id(g_fc_min_4) = mins[5].as<float>();
                       id(g_forecast_ok) = true;
                     }
                     return true;
@@ -294,70 +277,22 @@ script:
                     return true;
                   });
 
-  # ── Tarefas Todoist — opcional (configura todoist_token em secrets.yaml)
-  - id: fetch_tasks
-    mode: single
-    then:
-      - http_request.get:
-          url: "https://api.todoist.com/api/v1/tasks?filter=today%7Coverdue"
-          headers:
-            Authorization: "Bearer ${todoist_token}"
-          capture_response: true
-          on_response:
-            then:
-              - lambda: |-
-                  if (response->status_code != 200) return;
-                  id(g_task_0) = ""; id(g_task_1) = ""; id(g_task_2) = "";
-                  id(g_task_count) = 0;
-                  // Todoist API v1 retorna {"results": [...]}
-                  DynamicJsonDocument doc(16384);
-                  if (deserializeJson(doc, body) == DeserializationError::Ok) {
-                    auto tasks = doc["results"].as<JsonArray>();
-                    for (auto task : tasks) {
-                      std::string name = task["content"].as<std::string>();
-                      if (name.length() > 36) name = name.substr(0, 33) + "...";
-                      if      (id(g_task_count) == 0) id(g_task_0) = name;
-                      else if (id(g_task_count) == 1) id(g_task_1) = name;
-                      else if (id(g_task_count) == 2) id(g_task_2) = name;
-                      else break;
-                      id(g_task_count)++;
-                    }
-                  }
-
-  # ── Companion — Apple Reminders + E-mail (configura companion_url em secrets.yaml)
-  - id: fetch_companion
-    mode: single
-    then:
-      - http_request.get:
-          url: "${companion_url}/data.json"
-          capture_response: true
-          on_response:
-            then:
-              - lambda: |-
-                  if (response->status_code != 200) return;
-                  id(g_task_0) = ""; id(g_task_1) = ""; id(g_task_2) = "";
-                  id(g_task_count) = 0;
-                  json::parse_json(body, [](JsonObject root) -> bool {
-                    id(g_email_unread) = root["email_unread"] | -1;
-                    auto tasks = root["tasks"].as<JsonArray>();
-                    for (auto t : tasks) {
-                      std::string name = t.as<std::string>();
-                      if (name.length() > 36) name = name.substr(0, 33) + "...";
-                      if      (id(g_task_count) == 0) id(g_task_0) = name;
-                      else if (id(g_task_count) == 1) id(g_task_1) = name;
-                      else if (id(g_task_count) == 2) id(g_task_2) = name;
-                      else break;
-                      id(g_task_count)++;
-                    }
-                    return true;
-                  });
-
 # ---------------------------------------------------------------------------
 font:
   - file: "gfonts://Roboto@700"
     id: font_clock
     size: 78
     glyphs: "0123456789:"
+
+  - file: "gfonts://Roboto@700"
+    id: font_temp_huge
+    size: 72
+    glyphs: "0123456789.,°C%-"
+
+  - file: "gfonts://Roboto@700"
+    id: font_rates
+    size: 42
+    glyphs: "0123456789.,$ BTC"
 
   - file: "gfonts://Roboto@700"
     id: font_temp
@@ -376,13 +311,18 @@ font:
 
   - file: "gfonts://Roboto"
     id: font_small
-    size: 18
-    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%$-_()çãõáéíóúâêîôûàèìòùäëïöü"
+    size: 16
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%-"
 
   - file: "gfonts://Roboto@300"
     id: font_date
     size: 26
     glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%$-_()çãõáéíóúâêîôûàèìòùäëïöü"
+
+  - file: "gfonts://Roboto@700"
+    id: font_icon
+    size: 48
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 
 # ---------------------------------------------------------------------------
 spi:
@@ -404,22 +344,21 @@ display:
     rotation: 0°
     lambda: |-
       // ── Helpers ──────────────────────────────────────────────────────
-      const int W = 800, H = 480, PAD = 22;
-      const int DIVX = 385;   // divisória vertical esquerda|direita
-      const int DIV1 = 315;   // divisória horizontal clima|tarefas
-      const int DIV2 = 435;   // divisória horizontal tarefas|rodapé
+      const int W = 800, H = 480, PAD = 20;
+      const int DIVX = 320;   // divisória vertical
+      const int DIV_H = 200;  // divisória horizontal
 
-      // Converte WMO weather code para descrição em português
-      auto wmo_pt = [](int c) -> const char* {
-        if (c == 0)              return "Ceu limpo";
-        if (c <= 3)              return "Nublado";
-        if (c == 45 || c == 48) return "Nevoeiro";
-        if (c >= 51 && c <= 55) return "Garoa";
-        if (c >= 61 && c <= 65) return "Chuva";
-        if (c >= 71 && c <= 77) return "Neve";
-        if (c >= 80 && c <= 82) return "Pancadas";
-        if (c >= 95)            return "Tempestade";
-        return "Variavel";
+      // WMO code → símbolo ASCII simples (para compatibilidade com e-paper fonts)
+      auto wmo_icon = [](int c) -> const char* {
+        if (c == 0)              return "S";    // Sunny
+        if (c <= 3)              return "C";    // Cloudy
+        if (c == 45 || c == 48) return "F";    // Fog
+        if (c >= 51 && c <= 55) return "D";    // Drizzle
+        if (c >= 61 && c <= 65) return "R";    // Rain
+        if (c >= 71 && c <= 77) return "N";    // sNow
+        if (c >= 80 && c <= 82) return "R";    // Rainy
+        if (c >= 95)            return "T";    // Thunder
+        return "?";
       };
 
       auto now = id(sntp_time).now();
@@ -428,8 +367,8 @@ display:
         return;
       }
 
-      // ── ESQUERDA: Relógio + Data ──────────────────────────────────────
-      it.strftime(PAD, 30, id(font_clock), TextAlign::TOP_LEFT, "%H:%M", now);
+      // ── TOPO: Data/Hora ──────────────────────────────────────────────
+      it.strftime(PAD, 20, id(font_clock), TextAlign::TOP_LEFT, "%H:%M", now);
 
       const char* dias[]  = {"Dom","Seg","Ter","Qua","Qui","Sex","Sab"};
       const char* meses[] = {"jan","fev","mar","abr","mai","jun",
@@ -438,97 +377,109 @@ display:
       snprintf(data_buf, sizeof(data_buf), "%s, %02d de %s de %04d",
                dias[now.day_of_week - 1], now.day_of_month,
                meses[now.month - 1], now.year);
-      it.printf(PAD, 128, id(font_date), TextAlign::TOP_LEFT, "%s", data_buf);
+      it.printf(PAD, 108, id(font_date), TextAlign::TOP_LEFT, "%s", data_buf);
 
-      // ── Linha divisória vertical ──────────────────────────────────────
-      it.line(DIVX, 0, DIVX, DIV1);
+      // ── Linha divisória horizontal ────────────────────────────────────
+      it.line(0, DIV_H, W, DIV_H);
 
-      // ── DIREITA-TOPO: Clima atual ─────────────────────────────────────
-      const int RX = DIVX + PAD;
-      const int RW = W - PAD;
+      // ══════════════════════════════════════════════════════════════════
+      // ESQUERDA: Clima Atual (com ícone grande)
+      // ══════════════════════════════════════════════════════════════════
+      const int LX = PAD + 20;
+      const int LY = DIV_H + 40;
 
       if (!id(g_weather_ok)) {
-        it.printf(RX, 80, id(font_body), TextAlign::TOP_LEFT, "Buscando clima...");
+        it.printf(LX, LY, id(font_body), TextAlign::TOP_LEFT, "Buscando clima...");
       } else {
-        it.printf(RX, PAD, id(font_body), TextAlign::TOP_LEFT,
-                  "%s", wmo_pt(id(g_weather_code)));
-        it.printf(RX, 55, id(font_temp), TextAlign::TOP_LEFT,
-                  "%.1f°C", id(g_temp));
+        // Ícone grande
+        it.printf(LX - 15, LY - 15, id(font_icon), TextAlign::TOP_LEFT,
+                  "%s", wmo_icon(id(g_weather_code)));
 
-        const int DY = 115, DS = 34, COL2 = RX + 175;
-        it.printf(RX,   DY,      id(font_body), TextAlign::TOP_LEFT, "Sensação");
-        it.printf(COL2, DY,      id(font_body), TextAlign::TOP_LEFT, "%.1f°C", id(g_feels_like));
-        it.printf(RX,   DY+DS,   id(font_body), TextAlign::TOP_LEFT, "Umidade");
-        it.printf(COL2, DY+DS,   id(font_body), TextAlign::TOP_LEFT, "%d%%", id(g_humidity));
-        it.printf(RX,   DY+DS*2, id(font_body), TextAlign::TOP_LEFT, "Vento");
-        it.printf(COL2, DY+DS*2, id(font_body), TextAlign::TOP_LEFT, "%.0f km/h", id(g_wind_kmh));
+        // Temperatura GRANDE (o destaque)
+        it.printf(LX + 80, LY, id(font_temp_huge), TextAlign::TOP_LEFT,
+                  "%.0f°", id(g_temp));
+
+        // Detalhes clima (abaixo)
+        const int DLY = LY + 80;
+        const int DLS = 26;
+        char climate_detail[64];
+
+        snprintf(climate_detail, sizeof(climate_detail), "Sensação: %.0f°C", id(g_feels_like));
+        it.printf(LX, DLY, id(font_small), TextAlign::TOP_LEFT, "%s", climate_detail);
+
+        snprintf(climate_detail, sizeof(climate_detail), "Umidade: %d%% | Vento: %.0f km/h", id(g_humidity), id(g_wind_kmh));
+        it.printf(LX, DLY + DLS, id(font_small), TextAlign::TOP_LEFT, "%s", climate_detail);
       }
 
-      // ── DIREITA-BAIXO: Previsão 3 dias ───────────────────────────────
-      it.line(DIVX, 235, W, 235);
+      // ── Linha divisória vertical ──────────────────────────────────────
+      it.line(DIVX, DIV_H, DIVX, H);
+
+      // ══════════════════════════════════════════════════════════════════
+      // DIREITA-TOPO: Cotações em DESTAQUE
+      // ══════════════════════════════════════════════════════════════════
+      const int RX = DIVX + 30;
+      const int RY_RATES = DIV_H + 40;
+
+      if (id(g_rates_ok)) {
+        // USD grande
+        char usd_buf[32];
+        snprintf(usd_buf, sizeof(usd_buf), "$ %.2f", id(g_usd_brl));
+        it.printf(RX, RY_RATES, id(font_rates), TextAlign::TOP_LEFT, "%s", usd_buf);
+
+        // BTC grande (abaixo)
+        char btc_buf[32];
+        if (id(g_btc_brl) >= 1000)
+          snprintf(btc_buf, sizeof(btc_buf), "BTC %.0f", id(g_btc_brl));
+        else
+          snprintf(btc_buf, sizeof(btc_buf), "BTC %.2f", id(g_btc_brl));
+        it.printf(RX, RY_RATES + 55, id(font_rates), TextAlign::TOP_LEFT, "%s", btc_buf);
+      }
+
+      // ══════════════════════════════════════════════════════════════════
+      // DIREITA-BAIXO: Previsão 5 dias horizontal
+      // ══════════════════════════════════════════════════════════════════
+      const int RY_FC = DIV_H + 220;
+      const int FC_SPACING = 92;  // espaçamento entre dias
 
       if (id(g_forecast_ok)) {
-        it.printf(RX,       245, id(font_small), TextAlign::TOP_LEFT, "Amanha");
-        it.printf(RX + 105, 245, id(font_small), TextAlign::TOP_LEFT, "%s", wmo_pt(id(g_fc_code_0)));
-        it.printf(RW - 80,  245, id(font_small), TextAlign::TOP_RIGHT, "%.0f/%.0f C", id(g_fc_max_0), id(g_fc_min_0));
+        // Header
+        it.printf(RX, RY_FC - 25, id(font_body_bold), TextAlign::TOP_LEFT, "Previsao 5 dias");
 
-        it.printf(RX,       269, id(font_small), TextAlign::TOP_LEFT, "2 dias");
-        it.printf(RX + 105, 269, id(font_small), TextAlign::TOP_LEFT, "%s", wmo_pt(id(g_fc_code_1)));
-        it.printf(RW - 80,  269, id(font_small), TextAlign::TOP_RIGHT, "%.0f/%.0f C", id(g_fc_max_1), id(g_fc_min_1));
+        // 5 dias em linha
+        int fc_x = RX;
+        struct FcData {
+          int code;
+          float max_t;
+          float min_t;
+        } fcs[] = {
+          {id(g_fc_code_0), id(g_fc_max_0), id(g_fc_min_0)},
+          {id(g_fc_code_1), id(g_fc_max_1), id(g_fc_min_1)},
+          {id(g_fc_code_2), id(g_fc_max_2), id(g_fc_min_2)},
+          {id(g_fc_code_3), id(g_fc_max_3), id(g_fc_min_3)},
+          {id(g_fc_code_4), id(g_fc_max_4), id(g_fc_min_4)}
+        };
 
-        it.printf(RX,       293, id(font_small), TextAlign::TOP_LEFT, "3 dias");
-        it.printf(RX + 105, 293, id(font_small), TextAlign::TOP_LEFT, "%s", wmo_pt(id(g_fc_code_2)));
-        it.printf(RW - 80,  293, id(font_small), TextAlign::TOP_RIGHT, "%.0f/%.0f C", id(g_fc_max_2), id(g_fc_min_2));
+        const char* labels[] = {"Ama", "2di", "3di", "4di", "5di"};
+
+        for (int i = 0; i < 5; i++) {
+          // Rótulo do dia
+          it.printf(fc_x, RY_FC, id(font_small), TextAlign::TOP_CENTER, "%s", labels[i]);
+
+          // Ícone
+          it.printf(fc_x, RY_FC + 20, id(font_icon), TextAlign::TOP_CENTER,
+                    "%s", wmo_icon(fcs[i].code));
+
+          // Temperaturas (max/min)
+          char temp_range[20];
+          snprintf(temp_range, sizeof(temp_range), "%.0f/%.0f", fcs[i].max_t, fcs[i].min_t);
+          it.printf(fc_x, RY_FC + 65, id(font_small), TextAlign::TOP_CENTER, "%s", temp_range);
+
+          fc_x += FC_SPACING;
+        }
       }
 
-      // ── Linha divisória horizontal (clima | tarefas) ─────────────────
-      it.line(0, DIV1, W, DIV1);
-
-      // ── TAREFAS ───────────────────────────────────────────────────────
-      it.printf(PAD, DIV1 + 8, id(font_body_bold), TextAlign::TOP_LEFT, "TAREFAS");
-
-      if (id(g_task_count) == 0) {
-        it.printf(PAD, DIV1 + 36, id(font_body), TextAlign::TOP_LEFT,
-                  strlen("${todoist_token}") == 0 && strlen("${companion_url}") == 0
-                    ? "Configure Todoist ou Companion no secrets.yaml"
-                    : "Nenhuma tarefa para hoje");
-      } else {
-        if (id(g_task_count) > 0)
-          it.printf(PAD, DIV1 + 36, id(font_body), TextAlign::TOP_LEFT,
-                    "[ ] %s", id(g_task_0).c_str());
-        if (id(g_task_count) > 1)
-          it.printf(PAD, DIV1 + 64, id(font_body), TextAlign::TOP_LEFT,
-                    "[ ] %s", id(g_task_1).c_str());
-        if (id(g_task_count) > 2)
-          it.printf(PAD, DIV1 + 92, id(font_body), TextAlign::TOP_LEFT,
-                    "[ ] %s", id(g_task_2).c_str());
-      }
-
-      // ── Linha divisória horizontal (tarefas | rodapé) ────────────────
-      it.line(0, DIV2, W, DIV2);
-
-      // ── RODAPÉ ────────────────────────────────────────────────────────
-      int ry = DIV2 + 8;
-
-      // E-mail
-      if (id(g_email_unread) >= 0) {
-        it.printf(PAD, ry, id(font_small), TextAlign::TOP_LEFT,
-                  "✉ %d não lido%s",
-                  id(g_email_unread), id(g_email_unread) == 1 ? "" : "s");
-      }
-
-      // Cotações
-      if (id(g_rates_ok)) {
-        char rates_buf[64];
-        if (id(g_btc_brl) >= 1000)
-          snprintf(rates_buf, sizeof(rates_buf), "$ %.2f  BTC %.0f", id(g_usd_brl), id(g_btc_brl));
-        else
-          snprintf(rates_buf, sizeof(rates_buf), "$ %.2f", id(g_usd_brl));
-        it.printf(W/2, ry, id(font_small), TextAlign::TOP_CENTER, "%s", rates_buf);
-      }
-
-      // Última atualização
+      // ── RODAPÉ: Última atualização ────────────────────────────────────
       if (id(g_upd_h) >= 0) {
-        it.printf(W - PAD, ry, id(font_small), TextAlign::TOP_RIGHT,
+        it.printf(W - PAD, H - 18, id(font_small), TextAlign::BOTTOM_RIGHT,
                   "atualizado às %02d:%02d", id(g_upd_h), id(g_upd_m));
       }
