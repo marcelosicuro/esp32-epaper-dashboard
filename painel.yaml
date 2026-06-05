@@ -273,6 +273,11 @@ font:
 
 
   - file: "gfonts://Roboto@700"
+    id: font_weather_icons
+    size: 72
+    glyphs: "0123456789!*"
+
+  - file: "gfonts://Roboto@700"
     id: font_temp_big
     size: 66
     glyphs: "0123456789.,°C"
@@ -323,59 +328,17 @@ display:
     lambda: |-
       const int W = 800, H = 480, PAD = 20;
 
-      // WMO → tipo de ícone (retorna enum)
-      auto wmo_type = [](int c) -> int {
-        if (c == 0)              return 0;  // sunny
-        if (c <= 3)              return 1;  // cloudy
-        if (c == 45 || c == 48) return 1;  // fog
-        if (c >= 51 && c <= 55) return 1;  // drizzle
-        if (c >= 61 && c <= 65) return 2;  // rain
-        if (c >= 71 && c <= 77) return 3;  // snow
-        if (c >= 80 && c <= 82) return 2;  // rainy
-        if (c >= 95)            return 4;  // thunder
-        return 1;  // default cloudy
-      };
-
-      // Desenha ícone do clima usando shapes
-      auto draw_weather_icon = [&](int x, int y, int code) {
-        int type = wmo_type(code);
-        if (type == 0) {
-          // Sunny: círculo com raios
-          it.filled_circle(x, y, 20);
-          it.line(x - 30, y, x - 28, y);
-          it.line(x + 28, y, x + 30, y);
-          it.line(x, y - 30, x, y - 28);
-          it.line(x, y + 28, x, y + 30);
-        } else if (type == 1) {
-          // Cloudy: nuvem (dois círculos)
-          it.filled_circle(x - 12, y + 8, 16);
-          it.filled_circle(x + 12, y + 8, 16);
-          it.filled_rectangle(x - 28, y + 8, 56, 20);
-        } else if (type == 2) {
-          // Rainy: nuvem + chuva
-          it.filled_circle(x - 12, y - 2, 14);
-          it.filled_circle(x + 12, y - 2, 14);
-          it.filled_rectangle(x - 24, y - 2, 48, 16);
-          it.line(x - 12, y + 20, x - 10, y + 28);
-          it.line(x, y + 20, x + 2, y + 28);
-          it.line(x + 12, y + 20, x + 14, y + 28);
-        } else if (type == 3) {
-          // Snow: nuvem + flocos
-          it.filled_circle(x - 12, y - 5, 13);
-          it.filled_circle(x + 12, y - 5, 13);
-          it.filled_rectangle(x - 22, y - 5, 44, 14);
-          it.printf(x - 14, y + 15, id(font_small), TextAlign::CENTER, "*");
-          it.printf(x, y + 15, id(font_small), TextAlign::CENTER, "*");
-          it.printf(x + 14, y + 15, id(font_small), TextAlign::CENTER, "*");
-        } else if (type == 4) {
-          // Thunder: nuvem + raio
-          it.filled_circle(x - 12, y - 5, 13);
-          it.filled_circle(x + 12, y - 5, 13);
-          it.filled_rectangle(x - 22, y - 5, 44, 14);
-          it.line(x, y + 12, x - 5, y + 22);
-          it.line(x - 5, y + 22, x + 5, y + 28);
-          it.line(x + 5, y + 28, x, y + 35);
-        }
+      // WMO → ícone ASCII (grande e visível em e-paper)
+      auto wmo_symbol = [](int c) -> const char* {
+        if (c == 0)              return "1";  // sunny
+        if (c <= 3)              return "2";  // cloudy
+        if (c == 45 || c == 48) return "2";  // fog = cloudy
+        if (c >= 51 && c <= 55) return "2";  // drizzle = cloudy
+        if (c >= 61 && c <= 65) return "3";  // rain
+        if (c >= 71 && c <= 77) return "4";  // snow
+        if (c >= 80 && c <= 82) return "3";  // rainy
+        if (c >= 95)            return "5";  // thunder
+        return "2";  // default cloudy
       };
 
       auto wmo_desc = [](int c) -> const char* {
@@ -423,8 +386,9 @@ display:
       if (!id(g_weather_ok)) {
         it.printf(LX, LY, id(font_body), TextAlign::TOP_LEFT, "Buscando clima...");
       } else {
-        // Desenha ícone do clima
-        draw_weather_icon(LX + 30, LY + 15, id(g_weather_code));
+        // Ícone do clima (Unicode via Noto Sans Symbols)
+        it.printf(LX, LY, id(font_weather_icons), TextAlign::TOP_LEFT,
+                  "%s", wmo_symbol(id(g_weather_code)));
 
         // Temperatura grande
         it.printf(LX + 90, LY + 5, id(font_temp_big), TextAlign::TOP_LEFT,
@@ -471,7 +435,8 @@ display:
         // Linha 1: ícones
         int fx = RX;
         for (int i = 0; i < 5; i++) {
-          draw_weather_icon(fx, LY + 155, fcs[i].code);
+          it.printf(fx, LY + 150, id(font_weather_icons), TextAlign::TOP_CENTER,
+                    "%s", wmo_symbol(fcs[i].code));
           fx += 70;
         }
 
