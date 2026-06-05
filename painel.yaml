@@ -87,7 +87,7 @@ http_request:
   useragent: esphome/painel-pessoal
   timeout: 15s
   verify_ssl: false
-  buffer_size_rx: 8192
+  buffer_size_rx: 16384
   buffer_size_tx: 512
 
 # ---------------------------------------------------------------------------
@@ -309,10 +309,11 @@ script:
                   if (response->status_code != 200) return;
                   id(g_task_0) = ""; id(g_task_1) = ""; id(g_task_2) = "";
                   id(g_task_count) = 0;
-                  // Todoist retorna array JSON na raiz — usa ArduinoJson diretamente
-                  DynamicJsonDocument doc(8192);
+                  // Todoist API v1 retorna {"results": [...]}
+                  DynamicJsonDocument doc(16384);
                   if (deserializeJson(doc, body) == DeserializationError::Ok) {
-                    for (auto task : doc.as<JsonArray>()) {
+                    auto tasks = doc["results"].as<JsonArray>();
+                    for (auto task : tasks) {
                       std::string name = task["content"].as<std::string>();
                       if (name.length() > 36) name = name.substr(0, 33) + "...";
                       if      (id(g_task_count) == 0) id(g_task_0) = name;
