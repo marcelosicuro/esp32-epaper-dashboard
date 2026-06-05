@@ -5,16 +5,16 @@ substitutions:
   # --- Localização (Open-Meteo — grátis, sem API key) ---
   latitude:  "-26.3044"
   longitude: "-48.8487"
-  timezone:  "<-03>3"               # UTC-3 fixo (Joinville/BR, sem horário de verão)
+  timezone:  "America/Sao_Paulo"
 
   # --- Pinos (Waveshare 7.5" V2 + Seeed XIAO ESP32-C3) ---
-  # D8=GPIO8 CLK | D10=GPIO10 MOSI | D3=GPIO5 CS | D2=GPIO4 DC | D1=GPIO3 RST | D0=GPIO2 BUSY
+  # Pinout confirmado do YAML original do Home Assistant
   spi_clk:     GPIO8
   spi_mosi:    GPIO10
-  epaper_cs:   GPIO5
-  epaper_dc:   GPIO4
-  epaper_rst:  GPIO3
-  epaper_busy: GPIO2
+  epaper_cs:   GPIO3
+  epaper_dc:   GPIO5
+  epaper_rst:  GPIO2
+  epaper_busy: GPIO4
 
   # --- Integrações opcionais ---
   # Deixe vazio ("") para desabilitar; configure em secrets.yaml
@@ -33,8 +33,9 @@ esphome:
 
 esp32:
   board: esp32-c3-devkitm-1
+  variant: esp32c3
   framework:
-    type: arduino
+    type: esp-idf
 
 # ---------------------------------------------------------------------------
 wifi:
@@ -81,6 +82,8 @@ http_request:
   useragent: esphome/painel-pessoal
   timeout: 15s
   verify_ssl: false
+  buffer_size_rx: 8192
+  buffer_size_tx: 512
 
 # ---------------------------------------------------------------------------
 globals:
@@ -230,8 +233,6 @@ script:
     then:
       - http_request.get:
           url: "https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min&wind_speed_unit=kmh&timezone=auto&forecast_days=4"
-          headers:
-            Accept-Encoding: identity
           capture_response: true
           on_response:
             then:
@@ -268,8 +269,6 @@ script:
     then:
       - http_request.get:
           url: "https://economia.awesomeapi.com.br/last/USD-BRL,BTC-BRL"
-          headers:
-            Accept-Encoding: identity
           capture_response: true
           on_response:
             then:
@@ -384,9 +383,11 @@ display:
     id: epaper_display
     cs_pin:    ${epaper_cs}
     dc_pin:    ${epaper_dc}
-    busy_pin:  ${epaper_busy}
+    busy_pin:
+      number: ${epaper_busy}
+      inverted: true
     reset_pin: ${epaper_rst}
-    model: 7.50inV2
+    model: 7.50inv2
     update_interval: 60s
     rotation: 0°
     lambda: |-
