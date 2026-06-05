@@ -424,7 +424,7 @@ display:
                               "jul","ago","set","out","nov","dez"};
       char data_buf[48];
       snprintf(data_buf, sizeof(data_buf), "%s, %02d de %s de %04d",
-               dias[now.day_of_week], now.day_of_month,
+               dias[now.day_of_week - 1], now.day_of_month,
                meses[now.month - 1], now.year);
       it.printf(PAD, 128, id(font_date), TextAlign::TOP_LEFT, "%s", data_buf);
 
