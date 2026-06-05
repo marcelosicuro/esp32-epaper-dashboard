@@ -275,7 +275,7 @@ font:
   - file: "gfonts://Roboto@700"
     id: font_weather_icons
     size: 72
-    glyphs: "0123456789!*"
+    glyphs: "Oo-~*!"
 
   - file: "gfonts://Roboto@700"
     id: font_temp_big
@@ -328,17 +328,17 @@ display:
     lambda: |-
       const int W = 800, H = 480, PAD = 20;
 
-      // WMO → ícone ASCII (grande e visível em e-paper)
+      // WMO → ícone ASCII puro (funciona em qualquer fonte)
       auto wmo_symbol = [](int c) -> const char* {
-        if (c == 0)              return "1";  // sunny
-        if (c <= 3)              return "2";  // cloudy
-        if (c == 45 || c == 48) return "2";  // fog = cloudy
-        if (c >= 51 && c <= 55) return "2";  // drizzle = cloudy
-        if (c >= 61 && c <= 65) return "3";  // rain
-        if (c >= 71 && c <= 77) return "4";  // snow
-        if (c >= 80 && c <= 82) return "3";  // rainy
-        if (c >= 95)            return "5";  // thunder
-        return "2";  // default cloudy
+        if (c == 0)              return "O";  // sunny (O grande = sol)
+        if (c <= 3)              return "o";  // cloudy (o pequeno = nuvem)
+        if (c == 45 || c == 48) return "o";  // fog
+        if (c >= 51 && c <= 55) return "o";  // drizzle
+        if (c >= 61 && c <= 65) return "~";  // rain (onda)
+        if (c >= 71 && c <= 77) return "*";  // snow (asterisco)
+        if (c >= 80 && c <= 82) return "~";  // rainy
+        if (c >= 95)            return "!";  // thunder (exclamação)
+        return "o";  // default cloudy
       };
 
       auto wmo_desc = [](int c) -> const char* {
