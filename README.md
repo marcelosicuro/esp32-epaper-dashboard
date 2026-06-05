@@ -2,6 +2,8 @@
 
 > Painel e-paper com clima, cotações e tarefas — totalmente independente. Sem Home Assistant, sem MQTT, sem servidor intermediário. O ESP32 busca os dados direto da internet.
 
+![Painel em funcionamento](IMG_0528.png)
+
 ---
 
 ## O que exibe
