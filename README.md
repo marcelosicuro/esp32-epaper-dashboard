@@ -1,78 +1,65 @@
-# ESP32-C3 + Waveshare 7.5" V2 — Painel Pessoal (sem Home Assistant)
+# ESP32-C3 + Waveshare 7.5" V2 — Painel Pessoal
 
-> Painel de clima e horário para e-paper, totalmente independente. Sem Home Assistant, sem MQTT, sem servidor intermediário — o ESP32 busca os dados direto da internet.
-
-![layout do painel](docs/preview.png)
+> Painel e-paper com clima, cotações e tarefas — totalmente independente. Sem Home Assistant, sem MQTT, sem servidor intermediário. O ESP32 busca os dados direto da internet.
 
 ---
 
-## Por que este projeto existe?
+## O que exibe
 
-Montar um ESP32 com tela e-paper é mais difícil do que deveria ser. A maioria dos tutoriais exige Home Assistant, MQTT ou algum servidor rodando na rede. Este projeto não precisa de nada disso.
-
-**O que roda aqui:**
-- Horário sincronizado via NTP (pool.ntp.org)
-- Clima via [Open-Meteo](https://open-meteo.com/) — API gratuita, sem cadastro, sem API key
-- Firmware gerado pelo [ESPHome](https://esphome.io/) — atualizável pelo Wi-Fi (OTA)
-
----
-
-## Hardware
-
-| Item | Modelo testado |
+| Seção | Conteúdo |
 |---|---|
-| Microcontrolador | ESP32-C3 (qualquer variante com Wi-Fi) |
-| Display | Waveshare 7.5" e-Paper V2 (800×480) |
-| Alimentação | USB 5V ou 3.3V externo |
-
-Outros modelos Waveshare provavelmente funcionam — veja a seção [Outros modelos de display](#outros-modelos-de-display).
+| Horário e data | NTP sincronizado, timezone configurável |
+| Clima atual | Temperatura, sensação térmica, umidade, vento |
+| Previsão | 3 dias com condição e min/máx |
+| Tarefas | Até 3 tarefas de hoje via Todoist |
+| Rodapé | USD/BRL, BTC/BRL e horário da última atualização |
 
 ---
 
-## Fiação — ESP32-C3 → Waveshare 7.5" V2
+## Hardware testado
 
-| Pino do Waveshare HAT | Pino ESP32-C3 | Observação |
+| Item | Modelo |
+|---|---|
+| Microcontrolador | **Seeed XIAO ESP32-C3** |
+| Display | **Waveshare 7.5" e-Paper V2** (800×480) |
+| Alimentação | Carregador USB 5V/1A ou superior |
+
+> **Importante:** use um carregador USB comum (500 mA+). A porta USB de notebooks pode não fornecer corrente suficiente durante a inicialização do Wi-Fi, causando reset em loop.
+
+---
+
+## Fiação — Seeed XIAO ESP32-C3 → Waveshare 7.5" V2
+
+| Waveshare | XIAO ESP32-C3 | GPIO |
 |---|---|---|
-| VCC | 3.3V | **Não use 5V** |
-| GND | GND | |
-| DIN (MOSI) | GPIO7 | SPI2 MOSI |
-| SCLK | GPIO6 | SPI2 CLK |
-| CS | GPIO2 | Chip Select |
-| DC | GPIO4 | Data/Command |
-| RST | GPIO5 | Reset |
-| BUSY | GPIO3 | Espera refresh |
-
-> Se você comprou um kit diferente (ex: ESP32 S2, S3, ou placa Waveshare com ESP32 integrado), confira os pinos no `painel.yaml` — eles ficam na seção `substitutions` no topo do arquivo.
+| VCC | 3.3V | — |
+| GND | GND | — |
+| DIN (MOSI) | D10 | GPIO10 |
+| SCLK (CLK) | D8 | GPIO8 |
+| CS | D1 | GPIO3 |
+| DC | D3 | GPIO5 |
+| RST | D0 | GPIO2 |
+| BUSY | D2 | GPIO4 |
 
 ---
 
 ## Pré-requisitos
 
-### 1. Instalar ESPHome
+### 1. ESPHome
 
 ```bash
 pip3 install esphome
 ```
 
-Ou via Docker:
+### 2. Fontes Roboto
 
-```bash
-docker run --rm -v "${PWD}":/config -it ghcr.io/esphome/esphome compile painel.yaml
-```
-
-### 2. Baixar as fontes
-
-Coloque estes arquivos na pasta `fonts/`:
-
+Coloque na pasta `fonts/`:
 - `Roboto-Bold.ttf`
 - `Roboto-Regular.ttf`
 - `Roboto-Light.ttf`
 
-Download rápido:
-
 ```bash
 cd fonts
-# pacote completo do Google Fonts
 curl -L "https://fonts.google.com/download?family=Roboto" -o roboto.zip
 unzip roboto.zip "Roboto/static/Roboto-Bold.ttf" "Roboto/static/Roboto-Regular.ttf" "Roboto/static/Roboto-Light.ttf" -d .
 mv Roboto/static/*.ttf . && rm -rf Roboto roboto.zip
@@ -88,14 +75,15 @@ mv Roboto/static/*.ttf . && rm -rf Roboto roboto.zip
 cp secrets.yaml.example secrets.yaml
 ```
 
-Edite o `secrets.yaml` com seu Wi-Fi e as chaves geradas:
+Edite `secrets.yaml`:
 
 ```yaml
 wifi_ssid: "Minha Rede"
 wifi_password: "minha-senha"
 ap_password: "painel1234"
-api_key: "CHAVE_BASE64_32_BYTES="
+api_key: "CHAVE_BASE64_32_BYTES="   # gerada abaixo
 ota_password: "qualquer-senha"
+todoist_token: ""                   # opcional — veja seção Tarefas
 ```
 
 Gere a `api_key`:
@@ -106,41 +94,45 @@ python3 -c "import base64,os; print(base64.b64encode(os.urandom(32)).decode())"
 
 ### 2. Ajuste sua localização
 
-No topo do `painel.yaml`, edite:
+No topo do `painel.yaml`:
 
 ```yaml
 substitutions:
-  latitude: "-23.5505"    # sua latitude
-  longitude: "-46.6333"   # sua longitude
-  timezone: "America/Sao_Paulo"
+  latitude:  "-23.5505"
+  longitude: "-46.6333"
+  timezone:  "America/Sao_Paulo"
 ```
 
-Encontre latitude e longitude da sua cidade em: https://latlong.net
+---
+
+## Tarefas via Todoist (opcional)
+
+1. Crie uma conta em [todoist.com](https://todoist.com) (gratuito)
+2. Acesse **Settings → Integrations → Developer** e copie o API token
+3. Adicione em `secrets.yaml`:
+
+```yaml
+todoist_token: "seu_token_aqui"
+```
+
+O painel exibe tarefas com vencimento para hoje ou atrasadas. Se o campo ficar vazio, a seção mostra "Nenhuma tarefa para hoje".
 
 ---
 
 ## Compilar e gravar
 
-### Primeira vez (cabo USB)
+### Primeira vez (USB)
 
 ```bash
-esphome run painel.yaml
-```
-
-O ESPHome detecta a porta serial automaticamente. Se não detectar, passe manualmente:
-
-```bash
-esphome run painel.yaml --device /dev/cu.usbmodem1101   # macOS
-esphome run painel.yaml --device /dev/ttyUSB0           # Linux
+python3 -m esphome upload painel.yaml --device /dev/cu.usbmodem1101   # macOS
+python3 -m esphome upload painel.yaml --device /dev/ttyUSB0           # Linux
 ```
 
 ### Atualizações seguintes (Wi-Fi, sem cabo)
 
 ```bash
-esphome run painel.yaml
+python3 -m esphome upload painel.yaml --device painel-pessoal.local
 ```
-
-O ESPHome usa OTA automaticamente se o dispositivo já estiver na rede.
 
 ---
 
@@ -150,84 +142,95 @@ O ESPHome usa OTA automaticamente se o dispositivo já estiver na rede.
 Boot
  └─ Conecta ao Wi-Fi
  └─ Sincroniza horário via NTP
- └─ Aguarda 10s → busca clima no Open-Meteo
+ └─ Aguarda 12s → busca clima, cotações e tarefas
  └─ Desenha o painel no e-paper
 
-A cada 1 minuto  → atualiza o relógio no display
-A cada 20 minutos → busca novo clima e redesenha
+A cada 60 segundos  → atualiza o display
+A cada 20 minutos   → busca novos dados da internet
 ```
 
-O display e-paper **não precisa de energia para manter a imagem** — ideal para deixar ligado 24h com consumo mínimo.
+---
+
+## Integrações
+
+| Dado | API | Custo |
+|---|---|---|
+| Clima | [Open-Meteo](https://open-meteo.com/) | Gratuito, sem cadastro |
+| Cotações | [AwesomeAPI](https://docs.awesomeapi.com.br/) | Gratuito, sem cadastro |
+| Tarefas | [Todoist REST API v1](https://developer.todoist.com/rest/v1/) | Gratuito (plano pessoal) |
 
 ---
 
 ## Personalização
 
-### Mudar cidade
-
-```yaml
-substitutions:
-  latitude: "-22.9068"   # Rio de Janeiro
-  longitude: "-43.1729"
-  timezone: "America/Sao_Paulo"
-```
-
-### Mudar frequência de atualização do clima
+### Mudar frequência de atualização
 
 ```yaml
 interval:
-  - interval: 30min    # era 20min
+  - interval: 30min    # padrão: 20min
 ```
 
-### Adicionar mais informações no display
+### Ajustar layout
 
-O layout fica na seção `lambda:` do display. Consulte a [documentação do ESPHome Display](https://esphome.io/components/display/index.html).
-
-### Outros modelos de display
-
-Troque o `model:` na seção `display:`:
-
-| Display | `model:` |
-|---|---|
-| 7.5" V2 (este projeto) | `7.50inV2` |
-| 4.2" | `4.20in` |
-| 2.9" | `2.90in` |
-| 2.13" | `2.13in` |
-
-Veja todos os modelos: https://esphome.io/components/display/waveshare_epaper.html
+O layout fica na seção `lambda:` do componente `display`. Consulte a [documentação do ESPHome Display](https://esphome.io/components/display/index.html).
 
 ---
 
 ## Troubleshooting
 
-### Tela fica branca / não atualiza
+### Tela não atualiza / fica branca
 
 - Verifique a fiação (especialmente DC e BUSY)
-- Confirme o modelo correto em `model:`
-- Habilite logs: `logger: level: DEBUG` e veja a saída serial
+- Confirme `model: 7.5inV2rev2` no `painel.yaml`
+- Habilite logs: `logger: level: DEBUG`
 
-### Clima não carrega
+### Clima/cotações não carregam (ESPHome 2025.2.2)
 
-- Confirme que o ESP está conectado ao Wi-Fi (acesse `http://<IP>` no navegador)
-- Teste a URL do clima no seu navegador: `https://api.open-meteo.com/v1/forecast?latitude=-23.55&longitude=-46.63&current=temperature_2m`
+O ESPHome 2025.2.2 tem um bug: APIs que usam `Transfer-Encoding: chunked` (sem `Content-Length`) resultam em body vazio. Open-Meteo e AwesomeAPI usam chunked.
 
-### Não encontra a porta serial no macOS
+**Fix:** aplique o patch nos dois arquivos do pacote instalado:
 
-```bash
-ls /dev/cu.*
-# Instale o driver se necessário:
-# CH340: https://www.wch-ic.com/downloads/CH341SER_MAC_ZIP.html
-# CP2102: https://www.silabs.com/developers/usb-to-uart-bridge-vcp-drivers
+**`http_request.h`** — troque a linha com `max_length`:
+```cpp
+// De:
+size_t max_length = std::min(content_length, this->max_response_buffer_size_);
+
+// Para:
+size_t max_length = content_length > 0
+    ? std::min(content_length, this->max_response_buffer_size_)
+    : this->max_response_buffer_size_;
 ```
+
+E adicione `if (read <= 0) break;` dentro do loop de leitura, antes de `read_index += read`.
+
+**`http_request_idf.cpp`** — troque a linha com `bufsize`:
+```cpp
+// De:
+int bufsize = std::min(max_len, this->content_length - this->bytes_read_);
+
+// Para:
+int bufsize = this->content_length > 0
+    ? (int)std::min(max_len, this->content_length - this->bytes_read_)
+    : (int)max_len;
+```
+
+E troque `this->bytes_read_ += read_len;` por `if (read_len > 0) this->bytes_read_ += read_len;`.
+
+Os arquivos ficam em:
+```
+$(python3 -c "import esphome; print(esphome.__path__[0])")/components/http_request/
+```
+
+### Device não responde na porta USB
+
+O XIAO tem uma porta USB-C. Use um **carregador USB** para alimentação normal e o cabo USB-C de dados apenas para gravar o firmware. Notebook USB pode causar brownout durante a inicialização do Wi-Fi.
+
+### Tarefas retornam erro 410
+
+A API Todoist v2 (`/rest/v2/tasks`) foi depreciada. Use a v1 (`/api/v1/tasks`) — já configurada neste repositório.
 
 ---
 
 ## Licença
 
 MIT — use, modifique e distribua à vontade.
-
----
-
-## Contribuindo
-
-Issues e PRs são bem-vindos. Se você adaptou para outro hardware ou adicionou novos dados ao painel, compartilhe!
