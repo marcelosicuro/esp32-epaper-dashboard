@@ -76,99 +76,6 @@ http_request:
   buffer_size_tx: 512
 
 globals:
-  # Clima atual
-  - id: g_temp
-    type: float
-    restore_value: false
-    initial_value: '-99.0'
-  - id: g_feels_like
-    type: float
-    restore_value: false
-    initial_value: '-99.0'
-  - id: g_humidity
-    type: int
-    restore_value: false
-    initial_value: '0'
-  - id: g_wind_kmh
-    type: float
-    restore_value: false
-    initial_value: '0.0'
-  - id: g_weather_code
-    type: int
-    restore_value: false
-    initial_value: '-1'
-  - id: g_weather_ok
-    type: bool
-    restore_value: false
-    initial_value: 'false'
-
-  # Previsão 5 dias
-  - id: g_fc_code_0
-    type: int
-    restore_value: false
-    initial_value: '0'
-  - id: g_fc_max_0
-    type: float
-    restore_value: false
-    initial_value: '0.0'
-  - id: g_fc_min_0
-    type: float
-    restore_value: false
-    initial_value: '0.0'
-  - id: g_fc_code_1
-    type: int
-    restore_value: false
-    initial_value: '0'
-  - id: g_fc_max_1
-    type: float
-    restore_value: false
-    initial_value: '0.0'
-  - id: g_fc_min_1
-    type: float
-    restore_value: false
-    initial_value: '0.0'
-  - id: g_fc_code_2
-    type: int
-    restore_value: false
-    initial_value: '0'
-  - id: g_fc_max_2
-    type: float
-    restore_value: false
-    initial_value: '0.0'
-  - id: g_fc_min_2
-    type: float
-    restore_value: false
-    initial_value: '0.0'
-  - id: g_fc_code_3
-    type: int
-    restore_value: false
-    initial_value: '0'
-  - id: g_fc_max_3
-    type: float
-    restore_value: false
-    initial_value: '0.0'
-  - id: g_fc_min_3
-    type: float
-    restore_value: false
-    initial_value: '0.0'
-  - id: g_fc_code_4
-    type: int
-    restore_value: false
-    initial_value: '0'
-  - id: g_fc_max_4
-    type: float
-    restore_value: false
-    initial_value: '0.0'
-  - id: g_fc_min_4
-    type: float
-    restore_value: false
-    initial_value: '0.0'
-  - id: g_forecast_ok
-    type: bool
-    restore_value: false
-    initial_value: 'false'
-
-  # Cotações
   - id: g_usd_brl
     type: float
     restore_value: false
@@ -181,8 +88,6 @@ globals:
     type: bool
     restore_value: false
     initial_value: 'false'
-
-  # Horário da última atualização
   - id: g_upd_h
     type: int
     restore_value: false
@@ -192,56 +97,13 @@ globals:
     restore_value: false
     initial_value: '-1'
 
-# ---------------------------------------------------------------------------
 script:
   - id: fetch_all
     mode: single
     then:
-      - script.execute: fetch_weather
-      - script.wait:   fetch_weather
       - script.execute: fetch_rates
       - script.wait:   fetch_rates
       - component.update: epaper_display
-
-  - id: fetch_weather
-    mode: restart
-    then:
-      - logger.log: "fetch_weather: iniciando..."
-      - http_request.get:
-          url: "https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min&wind_speed_unit=kmh&timezone=auto&forecast_days=6"
-          headers:
-            Accept-Encoding: identity
-          capture_response: true
-          on_response:
-            then:
-              - lambda: |-
-                  if (response->status_code != 200) return;
-                  json::parse_json(body, [](JsonObject root) -> bool {
-                    auto cur = root["current"];
-                    if (!cur.isNull()) {
-                      id(g_temp)         = cur["temperature_2m"].as<float>();
-                      id(g_feels_like)   = cur["apparent_temperature"].as<float>();
-                      id(g_humidity)     = cur["relative_humidity_2m"].as<int>();
-                      id(g_wind_kmh)     = cur["wind_speed_10m"].as<float>();
-                      id(g_weather_code) = cur["weather_code"].as<int>();
-                      id(g_weather_ok)   = true;
-                      auto t = id(sntp_time).now();
-                      id(g_upd_h) = t.hour; id(g_upd_m) = t.minute;
-                    }
-                    auto daily = root["daily"];
-                    if (!daily.isNull()) {
-                      auto codes = daily["weather_code"].as<JsonArray>();
-                      auto maxs  = daily["temperature_2m_max"].as<JsonArray>();
-                      auto mins  = daily["temperature_2m_min"].as<JsonArray>();
-                      id(g_fc_code_0) = codes[1].as<int>(); id(g_fc_max_0) = maxs[1].as<float>(); id(g_fc_min_0) = mins[1].as<float>();
-                      id(g_fc_code_1) = codes[2].as<int>(); id(g_fc_max_1) = maxs[2].as<float>(); id(g_fc_min_1) = mins[2].as<float>();
-                      id(g_fc_code_2) = codes[3].as<int>(); id(g_fc_max_2) = maxs[3].as<float>(); id(g_fc_min_2) = mins[3].as<float>();
-                      id(g_fc_code_3) = codes[4].as<int>(); id(g_fc_max_3) = maxs[4].as<float>(); id(g_fc_min_3) = mins[4].as<float>();
-                      id(g_fc_code_4) = codes[5].as<int>(); id(g_fc_max_4) = maxs[5].as<float>(); id(g_fc_min_4) = mins[5].as<float>();
-                      id(g_forecast_ok) = true;
-                    }
-                    return true;
-                  });
 
   - id: fetch_rates
     mode: single
@@ -261,32 +123,26 @@ script:
                     if (!usd.isNull()) id(g_usd_brl) = atof(usd["bid"].as<const char*>());
                     if (!btc.isNull()) id(g_btc_brl) = atof(btc["bid"].as<const char*>());
                     id(g_rates_ok) = true;
+                    auto t = id(sntp_time).now();
+                    id(g_upd_h) = t.hour; id(g_upd_m) = t.minute;
                     return true;
                   });
 
-# ---------------------------------------------------------------------------
 font:
   - file: "gfonts://Roboto@700"
     id: font_clock
     size: 78
     glyphs: "0123456789:"
 
-
-
   - file: "gfonts://Roboto@700"
-    id: font_weather_big
-    size: 96
-    glyphs: "SNRVT"
+    id: font_calendar_day
+    size: 36
+    glyphs: "0123456789"
 
-  - file: "gfonts://Roboto@700"
-    id: font_weather_small
-    size: 28
-    glyphs: "SNRVT"
-
-  - file: "gfonts://Roboto@700"
-    id: font_temp_big
-    size: 66
-    glyphs: "0123456789.,°C"
+  - file: "gfonts://Roboto"
+    id: font_calendar_label
+    size: 18
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%$-_()çãõáéíóúâêîôûàèìòùäëïöü"
 
   - file: "gfonts://Roboto@700"
     id: font_rates_big
@@ -313,12 +169,10 @@ font:
     size: 26
     glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%$-_()çãõáéíóúâêîôûàèìòùäëïöü"
 
-# ---------------------------------------------------------------------------
 spi:
   clk_pin:  ${spi_clk}
   mosi_pin: ${spi_mosi}
 
-# ---------------------------------------------------------------------------
 display:
   - platform: waveshare_epaper
     id: epaper_display
@@ -333,31 +187,6 @@ display:
     rotation: 0°
     lambda: |-
       const int W = 800, H = 480, PAD = 20;
-
-      // WMO → caractere de ícone (S/N/R/V/T)
-      auto wmo_char = [](int c) -> const char* {
-        if (c == 0)              return "S";  // Sunny
-        if (c <= 3)              return "N";  // cloudy (Nuvem)
-        if (c == 45 || c == 48) return "N";  // fog
-        if (c >= 51 && c <= 55) return "N";  // drizzle
-        if (c >= 61 && c <= 65) return "R";  // Rain
-        if (c >= 71 && c <= 77) return "V";  // snoW
-        if (c >= 80 && c <= 82) return "R";  // rainy
-        if (c >= 95)            return "T";  // Thunder
-        return "N";
-      };
-
-      auto wmo_desc = [](int c) -> const char* {
-        if (c == 0)              return "Ceu limpo";
-        if (c <= 3)              return "Nublado";
-        if (c == 45 || c == 48) return "Nevoeiro";
-        if (c >= 51 && c <= 55) return "Garoa";
-        if (c >= 61 && c <= 65) return "Chuva";
-        if (c >= 71 && c <= 77) return "Neve";
-        if (c >= 80 && c <= 82) return "Pancadas";
-        if (c >= 95)            return "Tempestade";
-        return "Variavel";
-      };
 
       auto now = id(sntp_time).now();
       if (!now.is_valid()) {
@@ -382,78 +211,75 @@ display:
       it.line(0, 155, W, 155);
 
       // ══════════════════════════════════════════════════════════════════
-      // MEIO: ESQUERDA (clima atual) + DIREITA (cotações + previsão)
+      // ESQUERDA: CALENDÁRIO do mês
       // ══════════════════════════════════════════════════════════════════
+      const int CAL_X = PAD + 20;
+      const int CAL_Y = 180;
+      const int DAY_SIZE = 50;
+      const int DAY_SPACING = 50;
 
-      // ESQUERDA: Clima atual com emoji grande
-      const int LX = PAD + 30;
-      const int LY = 170;
+      // Cabeçalho do calendário
+      it.printf(CAL_X, CAL_Y - 35, id(font_body_bold), TextAlign::TOP_LEFT,
+                "%s de %04d", meses[now.month - 1], now.year);
 
-      if (!id(g_weather_ok)) {
-        it.printf(LX, LY, id(font_body), TextAlign::TOP_LEFT, "Buscando clima...");
-      } else {
-        // Ícone GRANDE do clima atual
-        it.printf(LX, LY - 10, id(font_weather_big), TextAlign::TOP_LEFT,
-                  "%s", wmo_char(id(g_weather_code)));
-
-        // Temperatura grande
-        it.printf(LX + 110, LY + 15, id(font_temp_big), TextAlign::TOP_LEFT,
-                  "%.0f°", id(g_temp));
-
-        // Descrição + detalhes
-        const int DLY = LY + 75;
-        const int DLS = 24;
-        it.printf(LX, DLY, id(font_body), TextAlign::TOP_LEFT,
-                  "%s", wmo_desc(id(g_weather_code)));
-        it.printf(LX, DLY + DLS, id(font_small), TextAlign::TOP_LEFT,
-                  "Sensacao: %.0f° | Umidade: %d%%", id(g_feels_like), id(g_humidity));
-        it.printf(LX, DLY + DLS*2, id(font_small), TextAlign::TOP_LEFT,
-                  "Vento: %.0f km/h", id(g_wind_kmh));
+      // Dias da semana (Dom-Sab)
+      const char* weekdays[] = {"Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"};
+      int wx = CAL_X;
+      for (int i = 0; i < 7; i++) {
+        it.printf(wx, CAL_Y, id(font_small), TextAlign::TOP_CENTER, "%s", weekdays[i]);
+        wx += DAY_SPACING;
       }
 
-      // DIREITA: Cotações (grande) + Previsão (compacta)
-      const int RX = 440;
+      // Calcular dias do mês
+      int days_in_month[] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+      int month_days = days_in_month[now.month];
+      if (now.month == 2 && ((now.year % 4 == 0 && now.year % 100 != 0) || (now.year % 400 == 0)))
+        month_days = 29;
 
-      // Cotações grandes
+      // Calcular primeiro dia da semana do mês
+      struct tm timeinfo = {};
+      timeinfo.tm_year = now.year - 1900;
+      timeinfo.tm_mon = now.month - 1;
+      timeinfo.tm_mday = 1;
+      mktime(&timeinfo);
+      int first_dow = timeinfo.tm_wday;
+
+      // Desenhar dias do mês
+      int day = 1;
+      int x_pos = CAL_X + (first_dow * DAY_SPACING);
+      int y_pos = CAL_Y + 30;
+
+      for (int d = 1; d <= month_days; d++) {
+        if (x_pos > CAL_X + (6 * DAY_SPACING)) {
+          x_pos = CAL_X;
+          y_pos += 55;
+        }
+
+        if (d == now.day_of_month) {
+          // DESTAQUE para dia atual (retângulo)
+          it.filled_rectangle(x_pos - 18, y_pos - 18, 36, 40);
+          it.printf(x_pos, y_pos, id(font_calendar_day), TextAlign::CENTER, "%d", d);
+        } else {
+          it.printf(x_pos, y_pos, id(font_calendar_day), TextAlign::CENTER, "%d", d);
+        }
+
+        x_pos += DAY_SPACING;
+      }
+
+      // ══════════════════════════════════════════════════════════════════
+      // DIREITA: COTAÇÕES em DESTAQUE
+      // ══════════════════════════════════════════════════════════════════
+      const int RX = 440;
+      const int RY = 180;
+
       if (id(g_rates_ok)) {
         char buf_usd[32];
         snprintf(buf_usd, sizeof(buf_usd), "$ %.2f", id(g_usd_brl));
-        it.printf(RX, LY, id(font_rates_big), TextAlign::TOP_LEFT, "%s", buf_usd);
+        it.printf(RX, RY, id(font_rates_big), TextAlign::TOP_LEFT, "%s", buf_usd);
 
         char buf_btc[32];
         snprintf(buf_btc, sizeof(buf_btc), "BTC %.0f", id(g_btc_brl));
-        it.printf(RX, LY + 60, id(font_rates_big), TextAlign::TOP_LEFT, "%s", buf_btc);
-      }
-
-      // Previsão 5 dias (compacta, 2 linhas)
-      if (id(g_forecast_ok)) {
-        it.printf(RX, LY + 130, id(font_body_bold), TextAlign::TOP_LEFT, "Proximos 5 dias");
-
-        struct Fc { int code; float max_t; float min_t; } fcs[] = {
-          {id(g_fc_code_0), id(g_fc_max_0), id(g_fc_min_0)},
-          {id(g_fc_code_1), id(g_fc_max_1), id(g_fc_min_1)},
-          {id(g_fc_code_2), id(g_fc_max_2), id(g_fc_min_2)},
-          {id(g_fc_code_3), id(g_fc_max_3), id(g_fc_min_3)},
-          {id(g_fc_code_4), id(g_fc_max_4), id(g_fc_min_4)}
-        };
-        const char* labels[] = {"Ama", "2d", "3d", "4d", "5d"};
-
-        // Linha 1: ícones PEQUENOS para previsão
-        int fx = RX + 15;
-        for (int i = 0; i < 5; i++) {
-          it.printf(fx, LY + 150, id(font_weather_small), TextAlign::TOP_CENTER,
-                    "%s", wmo_char(fcs[i].code));
-          fx += 70;
-        }
-
-        // Linha 2: min/max
-        fx = RX;
-        for (int i = 0; i < 5; i++) {
-          char fc_temps[16];
-          snprintf(fc_temps, sizeof(fc_temps), "%.0f/%.0f", fcs[i].max_t, fcs[i].min_t);
-          it.printf(fx, LY + 220, id(font_small), TextAlign::TOP_CENTER, "%s", fc_temps);
-          fx += 70;
-        }
+        it.printf(RX, RY + 70, id(font_rates_big), TextAlign::TOP_LEFT, "%s", buf_btc);
       }
 
       // ══════════════════════════════════════════════════════════════════
@@ -461,5 +287,5 @@ display:
       // ══════════════════════════════════════════════════════════════════
       if (id(g_upd_h) >= 0) {
         it.printf(W - PAD, H - 15, id(font_small), TextAlign::BOTTOM_RIGHT,
-                  "atualizado as %02d:%02d", id(g_upd_h), id(g_upd_m));
+                  "atualizado às %02d:%02d", id(g_upd_h), id(g_upd_m));
       }
