@@ -18,7 +18,7 @@ substitutions:
 
   # --- Integrações opcionais ---
   # Deixe vazio ("") para desabilitar; configure em secrets.yaml
-  todoist_token: ""          # ou: !secret todoist_token
+  todoist_token: !secret todoist_token
   companion_url: "http://127.0.0.1:8765"  # troque pelo IP do seu Mac em secrets.yaml
 
 # ---------------------------------------------------------------------------
@@ -36,6 +36,8 @@ esp32:
   variant: esp32c3
   framework:
     type: esp-idf
+    sdkconfig_options:
+      CONFIG_ESP_BROWNOUT_DET: "n"
 
 # ---------------------------------------------------------------------------
 wifi:
@@ -47,6 +49,9 @@ wifi:
 
 captive_portal:
 logger:
+  level: DEBUG
+  logs:
+    http_request: DEBUG
 
 ota:
   - platform: esphome
@@ -229,14 +234,18 @@ script:
 
   # ── Clima + Previsão (Open-Meteo) ──────────────────────────────────────
   - id: fetch_weather
-    mode: single
+    mode: restart
     then:
+      - logger.log: "fetch_weather: iniciando..."
       - http_request.get:
           url: "https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min&wind_speed_unit=kmh&timezone=auto&forecast_days=4"
+          headers:
+            Accept-Encoding: identity
           capture_response: true
           on_response:
             then:
               - lambda: |-
+                  ESP_LOGI("weather", "status=%d", response->status_code);
                   if (response->status_code != 200) return;
                   json::parse_json(body, [](JsonObject root) -> bool {
                     auto cur = root["current"];
@@ -269,6 +278,8 @@ script:
     then:
       - http_request.get:
           url: "https://economia.awesomeapi.com.br/last/USD-BRL,BTC-BRL"
+          headers:
+            Accept-Encoding: identity
           capture_response: true
           on_response:
             then:
@@ -288,7 +299,7 @@ script:
     mode: single
     then:
       - http_request.get:
-          url: "https://api.todoist.com/rest/v2/tasks?filter=today%7Coverdue"
+          url: "https://api.todoist.com/api/v1/tasks?filter=today%7Coverdue"
           headers:
             Authorization: "Bearer ${todoist_token}"
           capture_response: true
@@ -419,7 +430,7 @@ display:
       // ── ESQUERDA: Relógio + Data ──────────────────────────────────────
       it.strftime(PAD, 30, id(font_clock), TextAlign::TOP_LEFT, "%H:%M", now);
 
-      const char* dias[]  = {"Dom","Seg","Ter","Qua","Qui","Sex","Sáb"};
+      const char* dias[]  = {"Dom","Seg","Ter","Qua","Qui","Sex","Sab"};
       const char* meses[] = {"jan","fev","mar","abr","mai","jun",
                               "jul","ago","set","out","nov","dez"};
       char data_buf[48];
@@ -509,7 +520,7 @@ display:
       if (id(g_rates_ok)) {
         char rates_buf[64];
         if (id(g_btc_brl) >= 1000)
-          snprintf(rates_buf, sizeof(rates_buf), "$ %.2f  ₿ %.0f", id(g_usd_brl), id(g_btc_brl));
+          snprintf(rates_buf, sizeof(rates_buf), "$ %.2f  BTC %.0f", id(g_usd_brl), id(g_btc_brl));
         else
           snprintf(rates_buf, sizeof(rates_buf), "$ %.2f", id(g_usd_brl));
         it.printf(W/2, ry, id(font_small), TextAlign::TOP_CENTER, "%s", rates_buf);
