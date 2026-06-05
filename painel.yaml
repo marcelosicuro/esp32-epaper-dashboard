@@ -272,10 +272,6 @@ font:
     glyphs: "0123456789:"
 
 
-  - file: "gfonts://Roboto@700"
-    id: font_weather_icons
-    size: 72
-    glyphs: "Oo-~*!"
 
   - file: "gfonts://Roboto@700"
     id: font_temp_big
@@ -328,17 +324,59 @@ display:
     lambda: |-
       const int W = 800, H = 480, PAD = 20;
 
-      // WMO → ícone ASCII puro (funciona em qualquer fonte)
-      auto wmo_symbol = [](int c) -> const char* {
-        if (c == 0)              return "O";  // sunny (O grande = sol)
-        if (c <= 3)              return "o";  // cloudy (o pequeno = nuvem)
-        if (c == 45 || c == 48) return "o";  // fog
-        if (c >= 51 && c <= 55) return "o";  // drizzle
-        if (c >= 61 && c <= 65) return "~";  // rain (onda)
-        if (c >= 71 && c <= 77) return "*";  // snow (asterisco)
-        if (c >= 80 && c <= 82) return "~";  // rainy
-        if (c >= 95)            return "!";  // thunder (exclamação)
-        return "o";  // default cloudy
+      // WMO → tipo de ícone
+      auto wmo_type = [](int c) -> int {
+        if (c == 0)              return 0;  // sunny
+        if (c <= 3)              return 1;  // cloudy
+        if (c == 45 || c == 48) return 1;  // fog
+        if (c >= 51 && c <= 55) return 1;  // drizzle
+        if (c >= 61 && c <= 65) return 2;  // rain
+        if (c >= 71 && c <= 77) return 3;  // snow
+        if (c >= 80 && c <= 82) return 2;  // rainy
+        if (c >= 95)            return 4;  // thunder
+        return 1;
+      };
+
+      // Desenha ícone usando shapes (círculos, linhas, retângulos)
+      auto draw_icon = [&](int x, int y, int type, int size) {
+        int r = size / 2;
+        if (type == 0) {
+          // Sunny: círculo com raios
+          it.filled_circle(x, y, r);
+          it.line(x - r - 8, y, x - r - 3, y);
+          it.line(x + r + 3, y, x + r + 8, y);
+          it.line(x, y - r - 8, x, y - r - 3);
+          it.line(x, y + r + 3, x, y + r + 8);
+        } else if (type == 1) {
+          // Cloudy: dois círculos sobrepostos (nuvem)
+          it.filled_circle(x - 6, y + 4, r - 2);
+          it.filled_circle(x + 6, y + 4, r - 2);
+          it.filled_rectangle(x - r, y + 2, r * 2, r - 2);
+        } else if (type == 2) {
+          // Rainy: nuvem + gotas
+          it.filled_circle(x - 6, y, r - 3);
+          it.filled_circle(x + 6, y, r - 3);
+          it.filled_rectangle(x - r, y - 1, r * 2, r - 3);
+          it.line(x - 8, y + r + 2, x - 6, y + r + 8);
+          it.line(x, y + r + 2, x + 2, y + r + 8);
+          it.line(x + 8, y + r + 2, x + 10, y + r + 8);
+        } else if (type == 3) {
+          // Snow: nuvem + flocos (*)
+          it.filled_circle(x - 6, y, r - 3);
+          it.filled_circle(x + 6, y, r - 3);
+          it.filled_rectangle(x - r, y - 1, r * 2, r - 3);
+          it.printf(x - 6, y + r + 5, id(font_small), TextAlign::CENTER, "*");
+          it.printf(x, y + r + 5, id(font_small), TextAlign::CENTER, "*");
+          it.printf(x + 6, y + r + 5, id(font_small), TextAlign::CENTER, "*");
+        } else if (type == 4) {
+          // Thunder: nuvem + raio em zig-zag
+          it.filled_circle(x - 6, y, r - 3);
+          it.filled_circle(x + 6, y, r - 3);
+          it.filled_rectangle(x - r, y - 1, r * 2, r - 3);
+          it.line(x, y + r, x - 3, y + r + 6);
+          it.line(x - 3, y + r + 6, x + 3, y + r + 10);
+          it.line(x + 3, y + r + 10, x, y + r + 14);
+        }
       };
 
       auto wmo_desc = [](int c) -> const char* {
@@ -386,9 +424,8 @@ display:
       if (!id(g_weather_ok)) {
         it.printf(LX, LY, id(font_body), TextAlign::TOP_LEFT, "Buscando clima...");
       } else {
-        // Ícone do clima (Unicode via Noto Sans Symbols)
-        it.printf(LX, LY, id(font_weather_icons), TextAlign::TOP_LEFT,
-                  "%s", wmo_symbol(id(g_weather_code)));
+        // Desenha ícone do clima (formas geométricas)
+        draw_icon(LX + 28, LY + 20, wmo_type(id(g_weather_code)), 32);
 
         // Temperatura grande
         it.printf(LX + 90, LY + 5, id(font_temp_big), TextAlign::TOP_LEFT,
@@ -432,11 +469,10 @@ display:
         };
         const char* labels[] = {"Ama", "2d", "3d", "4d", "5d"};
 
-        // Linha 1: ícones
-        int fx = RX;
+        // Linha 1: ícones (menores para previsão)
+        int fx = RX + 20;
         for (int i = 0; i < 5; i++) {
-          it.printf(fx, LY + 150, id(font_weather_icons), TextAlign::TOP_CENTER,
-                    "%s", wmo_symbol(fcs[i].code));
+          draw_icon(fx, LY + 165, wmo_type(fcs[i].code), 20);
           fx += 70;
         }
 
