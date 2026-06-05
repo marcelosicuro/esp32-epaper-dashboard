@@ -337,45 +337,42 @@ display:
         return 1;
       };
 
-      // Desenha ícone usando shapes (círculos, linhas, retângulos)
+      // Desenha ícone simples para e-paper BW
       auto draw_icon = [&](int x, int y, int type, int size) {
-        int r = size / 2;
         if (type == 0) {
-          // Sunny: círculo com raios
-          it.filled_circle(x, y, r);
-          it.line(x - r - 8, y, x - r - 3, y);
-          it.line(x + r + 3, y, x + r + 8, y);
-          it.line(x, y - r - 8, x, y - r - 3);
-          it.line(x, y + r + 3, x, y + r + 8);
+          // Sunny: círculo com raios (contorno)
+          it.circle(x, y, size);
+          it.line(x - size - 6, y, x - size - 2, y);
+          it.line(x + size + 2, y, x + size + 6, y);
+          it.line(x, y - size - 6, x, y - size - 2);
+          it.line(x, y + size + 2, x, y + size + 6);
         } else if (type == 1) {
-          // Cloudy: dois círculos sobrepostos (nuvem)
-          it.filled_circle(x - 6, y + 4, r - 2);
-          it.filled_circle(x + 6, y + 4, r - 2);
-          it.filled_rectangle(x - r, y + 2, r * 2, r - 2);
+          // Cloudy: triângulo (topo pontudo = nuvem)
+          it.line(x - size, y + size, x, y - size);
+          it.line(x, y - size, x + size, y + size);
+          it.line(x + size, y + size, x - size, y + size);
         } else if (type == 2) {
-          // Rainy: nuvem + gotas
-          it.filled_circle(x - 6, y, r - 3);
-          it.filled_circle(x + 6, y, r - 3);
-          it.filled_rectangle(x - r, y - 1, r * 2, r - 3);
-          it.line(x - 8, y + r + 2, x - 6, y + r + 8);
-          it.line(x, y + r + 2, x + 2, y + r + 8);
-          it.line(x + 8, y + r + 2, x + 10, y + r + 8);
+          // Rainy: triângulo + linhas verticais (gotas)
+          it.line(x - size, y, x, y - size);
+          it.line(x, y - size, x + size, y);
+          it.line(x + size, y, x - size, y);
+          it.line(x - 8, y + size + 2, x - 6, y + size + 10);
+          it.line(x, y + size + 2, x + 2, y + size + 10);
+          it.line(x + 8, y + size + 2, x + 10, y + size + 10);
         } else if (type == 3) {
-          // Snow: nuvem + flocos (*)
-          it.filled_circle(x - 6, y, r - 3);
-          it.filled_circle(x + 6, y, r - 3);
-          it.filled_rectangle(x - r, y - 1, r * 2, r - 3);
-          it.printf(x - 6, y + r + 5, id(font_small), TextAlign::CENTER, "*");
-          it.printf(x, y + r + 5, id(font_small), TextAlign::CENTER, "*");
-          it.printf(x + 6, y + r + 5, id(font_small), TextAlign::CENTER, "*");
+          // Snow: triângulo + asteriscos (*)
+          it.line(x - size, y, x, y - size);
+          it.line(x, y - size, x + size, y);
+          it.line(x + size, y, x - size, y);
+          it.printf(x - 8, y + size + 8, id(font_small), TextAlign::CENTER, "*");
+          it.printf(x, y + size + 8, id(font_small), TextAlign::CENTER, "*");
+          it.printf(x + 8, y + size + 8, id(font_small), TextAlign::CENTER, "*");
         } else if (type == 4) {
-          // Thunder: nuvem + raio em zig-zag
-          it.filled_circle(x - 6, y, r - 3);
-          it.filled_circle(x + 6, y, r - 3);
-          it.filled_rectangle(x - r, y - 1, r * 2, r - 3);
-          it.line(x, y + r, x - 3, y + r + 6);
-          it.line(x - 3, y + r + 6, x + 3, y + r + 10);
-          it.line(x + 3, y + r + 10, x, y + r + 14);
+          // Thunder: triângulo + raio em zig-zag (!)
+          it.line(x - size, y, x, y - size);
+          it.line(x, y - size, x + size, y);
+          it.line(x + size, y, x - size, y);
+          it.printf(x, y + size + 8, id(font_small), TextAlign::CENTER, "!");
         }
       };
 
