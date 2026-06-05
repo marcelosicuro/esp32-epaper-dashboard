@@ -1,13 +1,9 @@
 substitutions:
   device_name: painel-pessoal
   friendly_name: "Painel Pessoal"
-
-  # --- Localização (Open-Meteo — grátis, sem API key) ---
   latitude:  "-26.3044"
   longitude: "-48.8487"
   timezone:  "America/Sao_Paulo"
-
-  # --- Pinos (Waveshare 7.5" V2 + Seeed XIAO ESP32-C3) ---
   spi_clk:     GPIO8
   spi_mosi:    GPIO10
   epaper_cs:   GPIO3
@@ -15,7 +11,6 @@ substitutions:
   epaper_rst:  GPIO2
   epaper_busy: GPIO4
 
-# ---------------------------------------------------------------------------
 esphome:
   name: ${device_name}
   friendly_name: ${friendly_name}
@@ -33,7 +28,6 @@ esp32:
     sdkconfig_options:
       CONFIG_ESP_BROWNOUT_DET: "n"
 
-# ---------------------------------------------------------------------------
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
@@ -58,7 +52,6 @@ api:
   encryption:
     key: !secret api_key
 
-# ---------------------------------------------------------------------------
 time:
   - platform: sntp
     id: sntp_time
@@ -70,13 +63,11 @@ time:
       then:
         - logger.log: "NTP sincronizado"
 
-# ---------------------------------------------------------------------------
 interval:
   - interval: 20min
     then:
       - script.execute: fetch_all
 
-# ---------------------------------------------------------------------------
 http_request:
   useragent: esphome/painel-pessoal
   timeout: 15s
@@ -84,7 +75,6 @@ http_request:
   buffer_size_rx: 16384
   buffer_size_tx: 512
 
-# ---------------------------------------------------------------------------
 globals:
   # Clima atual
   - id: g_temp
@@ -112,7 +102,7 @@ globals:
     restore_value: false
     initial_value: 'false'
 
-  # Previsão 5 dias (índice 1=amanhã, 2=2 dias, ..., 5=5 dias)
+  # Previsão 5 dias
   - id: g_fc_code_0
     type: int
     restore_value: false
@@ -213,7 +203,6 @@ script:
       - script.wait:   fetch_rates
       - component.update: epaper_display
 
-  # ── Clima + Previsão 5 dias (Open-Meteo) ───────────────────────────────
   - id: fetch_weather
     mode: restart
     then:
@@ -226,7 +215,6 @@ script:
           on_response:
             then:
               - lambda: |-
-                  ESP_LOGI("weather", "status=%d", response->status_code);
                   if (response->status_code != 200) return;
                   json::parse_json(body, [](JsonObject root) -> bool {
                     auto cur = root["current"];
@@ -255,7 +243,6 @@ script:
                     return true;
                   });
 
-  # ── Cotações (AwesomeAPI — sem chave) ──────────────────────────────────
   - id: fetch_rates
     mode: single
     then:
@@ -284,20 +271,16 @@ font:
     size: 78
     glyphs: "0123456789:"
 
-  - file: "gfonts://Roboto@700"
-    id: font_temp_huge
-    size: 72
-    glyphs: "0123456789.,°C%-"
 
   - file: "gfonts://Roboto@700"
-    id: font_rates
-    size: 42
+    id: font_temp_big
+    size: 66
+    glyphs: "0123456789.,°C"
+
+  - file: "gfonts://Roboto@700"
+    id: font_rates_big
+    size: 48
     glyphs: "0123456789.,$ BTC"
-
-  - file: "gfonts://Roboto@700"
-    id: font_temp
-    size: 50
-    glyphs: "0123456789.,°C%-"
 
   - file: "gfonts://Roboto"
     id: font_body
@@ -319,11 +302,6 @@ font:
     size: 26
     glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%$-_()çãõáéíóúâêîôûàèìòùäëïöü"
 
-  - file: "gfonts://Roboto@700"
-    id: font_icon
-    size: 48
-    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
 # ---------------------------------------------------------------------------
 spi:
   clk_pin:  ${spi_clk}
@@ -343,22 +321,73 @@ display:
     update_interval: 60s
     rotation: 0°
     lambda: |-
-      // ── Helpers ──────────────────────────────────────────────────────
       const int W = 800, H = 480, PAD = 20;
-      const int DIVX = 320;   // divisória vertical
-      const int DIV_H = 200;  // divisória horizontal
 
-      // WMO code → símbolo ASCII simples (para compatibilidade com e-paper fonts)
-      auto wmo_icon = [](int c) -> const char* {
-        if (c == 0)              return "S";    // Sunny
-        if (c <= 3)              return "C";    // Cloudy
-        if (c == 45 || c == 48) return "F";    // Fog
-        if (c >= 51 && c <= 55) return "D";    // Drizzle
-        if (c >= 61 && c <= 65) return "R";    // Rain
-        if (c >= 71 && c <= 77) return "N";    // sNow
-        if (c >= 80 && c <= 82) return "R";    // Rainy
-        if (c >= 95)            return "T";    // Thunder
-        return "?";
+      // WMO → tipo de ícone (retorna enum)
+      auto wmo_type = [](int c) -> int {
+        if (c == 0)              return 0;  // sunny
+        if (c <= 3)              return 1;  // cloudy
+        if (c == 45 || c == 48) return 1;  // fog
+        if (c >= 51 && c <= 55) return 1;  // drizzle
+        if (c >= 61 && c <= 65) return 2;  // rain
+        if (c >= 71 && c <= 77) return 3;  // snow
+        if (c >= 80 && c <= 82) return 2;  // rainy
+        if (c >= 95)            return 4;  // thunder
+        return 1;  // default cloudy
+      };
+
+      // Desenha ícone do clima usando shapes
+      auto draw_weather_icon = [&](int x, int y, int code) {
+        int type = wmo_type(code);
+        if (type == 0) {
+          // Sunny: círculo com raios
+          it.filled_circle(x, y, 20);
+          it.line(x - 30, y, x - 28, y);
+          it.line(x + 28, y, x + 30, y);
+          it.line(x, y - 30, x, y - 28);
+          it.line(x, y + 28, x, y + 30);
+        } else if (type == 1) {
+          // Cloudy: nuvem (dois círculos)
+          it.filled_circle(x - 12, y + 8, 16);
+          it.filled_circle(x + 12, y + 8, 16);
+          it.filled_rectangle(x - 28, y + 8, 56, 20);
+        } else if (type == 2) {
+          // Rainy: nuvem + chuva
+          it.filled_circle(x - 12, y - 2, 14);
+          it.filled_circle(x + 12, y - 2, 14);
+          it.filled_rectangle(x - 24, y - 2, 48, 16);
+          it.line(x - 12, y + 20, x - 10, y + 28);
+          it.line(x, y + 20, x + 2, y + 28);
+          it.line(x + 12, y + 20, x + 14, y + 28);
+        } else if (type == 3) {
+          // Snow: nuvem + flocos
+          it.filled_circle(x - 12, y - 5, 13);
+          it.filled_circle(x + 12, y - 5, 13);
+          it.filled_rectangle(x - 22, y - 5, 44, 14);
+          it.printf(x - 14, y + 15, id(font_small), TextAlign::CENTER, "*");
+          it.printf(x, y + 15, id(font_small), TextAlign::CENTER, "*");
+          it.printf(x + 14, y + 15, id(font_small), TextAlign::CENTER, "*");
+        } else if (type == 4) {
+          // Thunder: nuvem + raio
+          it.filled_circle(x - 12, y - 5, 13);
+          it.filled_circle(x + 12, y - 5, 13);
+          it.filled_rectangle(x - 22, y - 5, 44, 14);
+          it.line(x, y + 12, x - 5, y + 22);
+          it.line(x - 5, y + 22, x + 5, y + 28);
+          it.line(x + 5, y + 28, x, y + 35);
+        }
+      };
+
+      auto wmo_desc = [](int c) -> const char* {
+        if (c == 0)              return "Ceu limpo";
+        if (c <= 3)              return "Nublado";
+        if (c == 45 || c == 48) return "Nevoeiro";
+        if (c >= 51 && c <= 55) return "Garoa";
+        if (c >= 61 && c <= 65) return "Chuva";
+        if (c >= 71 && c <= 77) return "Neve";
+        if (c >= 80 && c <= 82) return "Pancadas";
+        if (c >= 95)            return "Tempestade";
+        return "Variavel";
       };
 
       auto now = id(sntp_time).now();
@@ -367,8 +396,10 @@ display:
         return;
       }
 
-      // ── TOPO: Data/Hora ──────────────────────────────────────────────
-      it.strftime(PAD, 20, id(font_clock), TextAlign::TOP_LEFT, "%H:%M", now);
+      // ══════════════════════════════════════════════════════════════════
+      // TOPO: Data/Hora
+      // ══════════════════════════════════════════════════════════════════
+      it.strftime(PAD, 15, id(font_clock), TextAlign::TOP_LEFT, "%H:%M", now);
 
       const char* dias[]  = {"Dom","Seg","Ter","Qua","Qui","Sex","Sab"};
       const char* meses[] = {"jan","fev","mar","abr","mai","jun",
@@ -379,107 +410,85 @@ display:
                meses[now.month - 1], now.year);
       it.printf(PAD, 108, id(font_date), TextAlign::TOP_LEFT, "%s", data_buf);
 
-      // ── Linha divisória horizontal ────────────────────────────────────
-      it.line(0, DIV_H, W, DIV_H);
+      it.line(0, 155, W, 155);
 
       // ══════════════════════════════════════════════════════════════════
-      // ESQUERDA: Clima Atual (com ícone grande)
+      // MEIO: ESQUERDA (clima atual) + DIREITA (cotações + previsão)
       // ══════════════════════════════════════════════════════════════════
-      const int LX = PAD + 20;
-      const int LY = DIV_H + 40;
+
+      // ESQUERDA: Clima atual com emoji grande
+      const int LX = PAD + 30;
+      const int LY = 170;
 
       if (!id(g_weather_ok)) {
         it.printf(LX, LY, id(font_body), TextAlign::TOP_LEFT, "Buscando clima...");
       } else {
-        // Ícone grande
-        it.printf(LX - 15, LY - 15, id(font_icon), TextAlign::TOP_LEFT,
-                  "%s", wmo_icon(id(g_weather_code)));
+        // Desenha ícone do clima
+        draw_weather_icon(LX + 30, LY + 15, id(g_weather_code));
 
-        // Temperatura GRANDE (o destaque)
-        it.printf(LX + 80, LY, id(font_temp_huge), TextAlign::TOP_LEFT,
+        // Temperatura grande
+        it.printf(LX + 90, LY + 5, id(font_temp_big), TextAlign::TOP_LEFT,
                   "%.0f°", id(g_temp));
 
-        // Detalhes clima (abaixo)
-        const int DLY = LY + 80;
-        const int DLS = 26;
-        char climate_detail[64];
-
-        snprintf(climate_detail, sizeof(climate_detail), "Sensação: %.0f°C", id(g_feels_like));
-        it.printf(LX, DLY, id(font_small), TextAlign::TOP_LEFT, "%s", climate_detail);
-
-        snprintf(climate_detail, sizeof(climate_detail), "Umidade: %d%% | Vento: %.0f km/h", id(g_humidity), id(g_wind_kmh));
-        it.printf(LX, DLY + DLS, id(font_small), TextAlign::TOP_LEFT, "%s", climate_detail);
+        // Descrição + detalhes
+        const int DLY = LY + 75;
+        const int DLS = 24;
+        it.printf(LX, DLY, id(font_body), TextAlign::TOP_LEFT,
+                  "%s", wmo_desc(id(g_weather_code)));
+        it.printf(LX, DLY + DLS, id(font_small), TextAlign::TOP_LEFT,
+                  "Sensacao: %.0f° | Umidade: %d%%", id(g_feels_like), id(g_humidity));
+        it.printf(LX, DLY + DLS*2, id(font_small), TextAlign::TOP_LEFT,
+                  "Vento: %.0f km/h", id(g_wind_kmh));
       }
 
-      // ── Linha divisória vertical ──────────────────────────────────────
-      it.line(DIVX, DIV_H, DIVX, H);
+      // DIREITA: Cotações (grande) + Previsão (compacta)
+      const int RX = 440;
 
-      // ══════════════════════════════════════════════════════════════════
-      // DIREITA-TOPO: Cotações em DESTAQUE
-      // ══════════════════════════════════════════════════════════════════
-      const int RX = DIVX + 30;
-      const int RY_RATES = DIV_H + 40;
-
+      // Cotações grandes
       if (id(g_rates_ok)) {
-        // USD grande
-        char usd_buf[32];
-        snprintf(usd_buf, sizeof(usd_buf), "$ %.2f", id(g_usd_brl));
-        it.printf(RX, RY_RATES, id(font_rates), TextAlign::TOP_LEFT, "%s", usd_buf);
+        char buf_usd[32];
+        snprintf(buf_usd, sizeof(buf_usd), "$ %.2f", id(g_usd_brl));
+        it.printf(RX, LY, id(font_rates_big), TextAlign::TOP_LEFT, "%s", buf_usd);
 
-        // BTC grande (abaixo)
-        char btc_buf[32];
-        if (id(g_btc_brl) >= 1000)
-          snprintf(btc_buf, sizeof(btc_buf), "BTC %.0f", id(g_btc_brl));
-        else
-          snprintf(btc_buf, sizeof(btc_buf), "BTC %.2f", id(g_btc_brl));
-        it.printf(RX, RY_RATES + 55, id(font_rates), TextAlign::TOP_LEFT, "%s", btc_buf);
+        char buf_btc[32];
+        snprintf(buf_btc, sizeof(buf_btc), "BTC %.0f", id(g_btc_brl));
+        it.printf(RX, LY + 60, id(font_rates_big), TextAlign::TOP_LEFT, "%s", buf_btc);
       }
 
-      // ══════════════════════════════════════════════════════════════════
-      // DIREITA-BAIXO: Previsão 5 dias horizontal
-      // ══════════════════════════════════════════════════════════════════
-      const int RY_FC = DIV_H + 220;
-      const int FC_SPACING = 92;  // espaçamento entre dias
-
+      // Previsão 5 dias (compacta, 2 linhas)
       if (id(g_forecast_ok)) {
-        // Header
-        it.printf(RX, RY_FC - 25, id(font_body_bold), TextAlign::TOP_LEFT, "Previsao 5 dias");
+        it.printf(RX, LY + 130, id(font_body_bold), TextAlign::TOP_LEFT, "Proximos 5 dias");
 
-        // 5 dias em linha
-        int fc_x = RX;
-        struct FcData {
-          int code;
-          float max_t;
-          float min_t;
-        } fcs[] = {
+        struct Fc { int code; float max_t; float min_t; } fcs[] = {
           {id(g_fc_code_0), id(g_fc_max_0), id(g_fc_min_0)},
           {id(g_fc_code_1), id(g_fc_max_1), id(g_fc_min_1)},
           {id(g_fc_code_2), id(g_fc_max_2), id(g_fc_min_2)},
           {id(g_fc_code_3), id(g_fc_max_3), id(g_fc_min_3)},
           {id(g_fc_code_4), id(g_fc_max_4), id(g_fc_min_4)}
         };
+        const char* labels[] = {"Ama", "2d", "3d", "4d", "5d"};
 
-        const char* labels[] = {"Ama", "2di", "3di", "4di", "5di"};
-
+        // Linha 1: ícones
+        int fx = RX;
         for (int i = 0; i < 5; i++) {
-          // Rótulo do dia
-          it.printf(fc_x, RY_FC, id(font_small), TextAlign::TOP_CENTER, "%s", labels[i]);
+          draw_weather_icon(fx, LY + 155, fcs[i].code);
+          fx += 70;
+        }
 
-          // Ícone
-          it.printf(fc_x, RY_FC + 20, id(font_icon), TextAlign::TOP_CENTER,
-                    "%s", wmo_icon(fcs[i].code));
-
-          // Temperaturas (max/min)
-          char temp_range[20];
-          snprintf(temp_range, sizeof(temp_range), "%.0f/%.0f", fcs[i].max_t, fcs[i].min_t);
-          it.printf(fc_x, RY_FC + 65, id(font_small), TextAlign::TOP_CENTER, "%s", temp_range);
-
-          fc_x += FC_SPACING;
+        // Linha 2: min/max
+        fx = RX;
+        for (int i = 0; i < 5; i++) {
+          char fc_temps[16];
+          snprintf(fc_temps, sizeof(fc_temps), "%.0f/%.0f", fcs[i].max_t, fcs[i].min_t);
+          it.printf(fx, LY + 220, id(font_small), TextAlign::TOP_CENTER, "%s", fc_temps);
+          fx += 70;
         }
       }
 
-      // ── RODAPÉ: Última atualização ────────────────────────────────────
+      // ══════════════════════════════════════════════════════════════════
+      // RODAPÉ: Última atualização
+      // ══════════════════════════════════════════════════════════════════
       if (id(g_upd_h) >= 0) {
-        it.printf(W - PAD, H - 18, id(font_small), TextAlign::BOTTOM_RIGHT,
-                  "atualizado às %02d:%02d", id(g_upd_h), id(g_upd_m));
+        it.printf(W - PAD, H - 15, id(font_small), TextAlign::BOTTOM_RIGHT,
+                  "atualizado as %02d:%02d", id(g_upd_h), id(g_upd_m));
       }
