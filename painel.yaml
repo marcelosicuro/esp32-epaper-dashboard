@@ -112,6 +112,22 @@ globals:
     type: bool
     restore_value: false
     initial_value: 'false'
+  - id: g_fc_code
+    type: int[5]
+    restore_value: false
+    initial_value: "{-1,-1,-1,-1,-1}"
+  - id: g_fc_tmax
+    type: float[5]
+    restore_value: false
+    initial_value: "{0,0,0,0,0}"
+  - id: g_fc_tmin
+    type: float[5]
+    restore_value: false
+    initial_value: "{0,0,0,0,0}"
+  - id: g_fc_ok
+    type: bool
+    restore_value: false
+    initial_value: 'false'
 
 script:
   - id: fetch_all
@@ -127,7 +143,7 @@ script:
     mode: single
     then:
       - http_request.get:
-          url: "https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,weather_code&timezone=auto"
+          url: "https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=6&timezone=auto"
           headers:
             Accept-Encoding: identity
           capture_response: true
@@ -143,6 +159,18 @@ script:
                     id(g_weather_code) = cur["weather_code"].as<int>();
                     id(g_weather_ok)   = true;
                     ESP_LOGI("clima", "OK: code=%d temp=%.1f umid=%d", id(g_weather_code), id(g_temp), id(g_humidity));
+                    auto daily = root["daily"];
+                    if (!daily.isNull()) {
+                      JsonArray codes = daily["weather_code"].as<JsonArray>();
+                      JsonArray tmax  = daily["temperature_2m_max"].as<JsonArray>();
+                      JsonArray tmin  = daily["temperature_2m_min"].as<JsonArray>();
+                      for (int i = 0; i < 5; i++) {
+                        id(g_fc_code)[i] = codes[i+1].as<int>();
+                        id(g_fc_tmax)[i] = tmax[i+1].as<float>();
+                        id(g_fc_tmin)[i] = tmin[i+1].as<float>();
+                      }
+                      id(g_fc_ok) = true;
+                    }
                     return true;
                   });
 
@@ -177,7 +205,7 @@ font:
 
   - file: "gfonts://Roboto@700"
     id: font_calendar_day
-    size: 36
+    size: 34
     glyphs: "0123456789"
 
   - file: "gfonts://Roboto"
@@ -188,7 +216,20 @@ font:
   - file: "gfonts://Roboto@700"
     id: font_rates_big
     size: 48
-    glyphs: "0123456789.,$ BTC"
+    glyphs: "0123456789., C°"
+
+  - file: "gfonts://Roboto@700"
+    id: font_rates_small
+    size: 36
+    glyphs: "0123456789.,"
+
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: font_currency_icon
+    size: 36
+    glyphs:
+      - "\U000F0813"  # bitcoin
+      - "\U000F01C1"  # currency-usd
+      - "\U000F0B85"  # currency-brl
 
   - file: "gfonts://Roboto"
     id: font_body
@@ -205,10 +246,25 @@ font:
     size: 16
     glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%-àáéíóúâêîôûãõç"
 
-  - file: "gfonts://Roboto@300"
+  - file: "gfonts://Roboto@700"
     id: font_date
     size: 26
     glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%$-_()çãõáéíóúâêîôûàèìòùäëïöü"
+
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: font_weather_icon_small
+    size: 36
+    glyphs:
+      - "\U000F0590"  # weather-cloudy
+      - "\U000F0591"  # weather-fog
+      - "\U000F0593"  # weather-lightning
+      - "\U000F0595"  # weather-partly-cloudy
+      - "\U000F0596"  # weather-pouring
+      - "\U000F0597"  # weather-rainy
+      - "\U000F0598"  # weather-snowy
+      - "\U000F0599"  # weather-sunny
+      - "\U000F067E"  # weather-lightning-rainy
+      - "\U000F067F"  # weather-snowy-rainy
 
   - file: "fonts/materialdesignicons-webfont.ttf"
     id: font_weather_icon
@@ -264,19 +320,55 @@ display:
                meses[now.month - 1], now.year);
       it.printf(PAD, 108, id(font_date), TextAlign::TOP_LEFT, "%s", data_buf);
 
+      if (id(g_rates_ok)) {
+        const int RR = W - PAD;  // borda direita
+        const int IC = 590;      // coluna dos ícones
+        const int RS = 46;       // espaço entre linhas
+        int ry = 10;
+        char buf[32];
+
+        // helper: formata inteiro com separador de milhar pt-BR (ponto)
+        auto fmt_th = [](char* b, size_t s, long v) {
+          if (v >= 1000000L)
+            snprintf(b, s, "%ld.%03ld.%03ld", v/1000000L, (v/1000L)%1000L, v%1000L);
+          else if (v >= 1000L)
+            snprintf(b, s, "%ld.%03ld", v/1000L, v%1000L);
+          else
+            snprintf(b, s, "%ld", v);
+        };
+
+        // USD/BRL  — ícone + valor com decimais (ex: 5,87)
+        it.printf(IC, ry, id(font_currency_icon), TextAlign::TOP_LEFT, "\U000F01C1");
+        long usd_i = (long)id(g_usd_brl);
+        int  usd_d = (int)((id(g_usd_brl) - (float)usd_i) * 100.0f + 0.5f);
+        if (usd_d >= 100) { usd_i++; usd_d = 0; }
+        snprintf(buf, sizeof(buf), "%ld,%02d", usd_i, usd_d);
+        it.printf(RR, ry, id(font_rates_small), TextAlign::TOP_RIGHT, "%s", buf);
+
+        // BTC em USD — ícone + valor inteiro com milhar (ex: 105.230)
+        ry += RS;
+        it.printf(IC, ry, id(font_currency_icon), TextAlign::TOP_LEFT, "\U000F0813");
+        float btc_usd = id(g_btc_brl) / id(g_usd_brl);
+        fmt_th(buf, sizeof(buf), (long)(btc_usd + 0.5f));
+        it.printf(RR, ry, id(font_rates_small), TextAlign::TOP_RIGHT, "%s", buf);
+
+        // BTC em BRL — ícone moeda BRL + valor inteiro com milhar (ex: 597.305)
+        ry += RS;
+        it.printf(IC, ry, id(font_currency_icon), TextAlign::TOP_LEFT, "\U000F0B85");
+        fmt_th(buf, sizeof(buf), (long)(id(g_btc_brl) + 0.5f));
+        it.printf(RR, ry, id(font_rates_small), TextAlign::TOP_RIGHT, "%s", buf);
+      }
+
       it.line(0, 155, W, 155);
 
       // ══════════════════════════════════════════════════════════════════
       // ESQUERDA: CALENDÁRIO do mês
       // ══════════════════════════════════════════════════════════════════
-      const int CAL_X = PAD + 20;
+      const int CAL_X = 65;   // centralizado em coluna de 430px: (430-350)/2 + 25
+      const int CAL_CENTER = 215;
       const int CAL_Y = 180;
       const int DAY_SIZE = 50;
       const int DAY_SPACING = 50;
-
-      // Cabeçalho do calendário
-      it.printf(CAL_X, CAL_Y - 35, id(font_body_bold), TextAlign::TOP_LEFT,
-                "%s de %04d", meses[now.month - 1], now.year);
 
       // Dias da semana (Dom-Sab)
       const char* weekdays[] = {"Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"};
@@ -303,7 +395,7 @@ display:
       // Desenhar dias do mês
       int day = 1;
       int x_pos = CAL_X + (first_dow * DAY_SPACING);
-      int y_pos = CAL_Y + 30;
+      int y_pos = CAL_Y + 45;
 
       for (int d = 1; d <= month_days; d++) {
         if (x_pos > CAL_X + (6 * DAY_SPACING)) {
@@ -312,9 +404,8 @@ display:
         }
 
         if (d == now.day_of_month) {
-          // DESTAQUE para dia atual (retângulo)
           it.filled_rectangle(x_pos - 18, y_pos - 18, 36, 40);
-          it.printf(x_pos, y_pos, id(font_calendar_day), TextAlign::CENTER, "%d", d);
+          it.printf(x_pos, y_pos, id(font_calendar_day), Color(0, 0, 0), TextAlign::CENTER, "%d", d);
         } else {
           it.printf(x_pos, y_pos, id(font_calendar_day), TextAlign::CENTER, "%d", d);
         }
@@ -323,7 +414,7 @@ display:
       }
 
       // ══════════════════════════════════════════════════════════════════
-      // DIREITA: CLIMA + COTAÇÕES
+      // DIREITA: CLIMA
       // ══════════════════════════════════════════════════════════════════
       const int RX = 450;
       const int RY = 165;
@@ -363,7 +454,7 @@ display:
         it.printf(RX, RY, id(font_weather_icon), TextAlign::TOP_LEFT,
                   "%s", wmo_icon(id(g_weather_code)));
         char buf_temp[16];
-        snprintf(buf_temp, sizeof(buf_temp), "%.0f C", id(g_temp));
+        snprintf(buf_temp, sizeof(buf_temp), "%.0f°C", id(g_temp));
         it.printf(RX + 82, RY + 15, id(font_rates_big), TextAlign::TOP_LEFT, "%s", buf_temp);
         it.printf(RX, RY + 82, id(font_body), TextAlign::TOP_LEFT,
                   "%s - %d%% umid.", wmo_desc(id(g_weather_code)), id(g_humidity));
@@ -371,16 +462,29 @@ display:
         it.printf(RX, RY + 20, id(font_body), TextAlign::TOP_LEFT, "Buscando clima...");
       }
 
-      it.line(430, 280, W, 280);
+      // Previsão 5 dias
+      if (id(g_fc_ok)) {
+        it.line(430, 278, 800, 278);
 
-      if (id(g_rates_ok)) {
-        char buf_usd[32];
-        snprintf(buf_usd, sizeof(buf_usd), "$ %.2f", id(g_usd_brl));
-        it.printf(RX, RY + 125, id(font_rates_big), TextAlign::TOP_LEFT, "%s", buf_usd);
+        const char* wd3[] = {"Dom","Seg","Ter","Qua","Qui","Sex","Sab"};
+        int today_dow = now.day_of_week - 1;  // 0=Dom
 
-        char buf_btc[32];
-        snprintf(buf_btc, sizeof(buf_btc), "BTC %.0f", id(g_btc_brl));
-        it.printf(RX, RY + 185, id(font_rates_big), TextAlign::TOP_LEFT, "%s", buf_btc);
+        const int FC_Y  = 288;
+        const int COL_W = 74;  // (800-430)/5
+
+        for (int i = 0; i < 5; i++) {
+          int cx  = 430 + COL_W * i + COL_W / 2;
+          int dow = (today_dow + i + 1) % 7;
+          char fc_buf[10];
+
+          it.printf(cx, FC_Y,      id(font_calendar_label), TextAlign::TOP_CENTER, "%s", wd3[dow]);
+          it.printf(cx, FC_Y + 22, id(font_weather_icon_small), TextAlign::TOP_CENTER,
+                    "%s", wmo_icon(id(g_fc_code)[i]));
+          snprintf(fc_buf, sizeof(fc_buf), "%.0f°", id(g_fc_tmax)[i]);
+          it.printf(cx, FC_Y + 62, id(font_body), TextAlign::TOP_CENTER, "%s", fc_buf);
+          snprintf(fc_buf, sizeof(fc_buf), "%.0f°", id(g_fc_tmin)[i]);
+          it.printf(cx, FC_Y + 87, id(font_small), TextAlign::TOP_CENTER, "%s", fc_buf);
+        }
       }
 
       // ══════════════════════════════════════════════════════════════════
