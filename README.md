@@ -1,6 +1,6 @@
 # ESP32-C3 + Waveshare 7.5" V2 — Painel Pessoal
 
-> Painel e-paper com clima, cotações e tarefas — totalmente independente. Sem Home Assistant, sem MQTT, sem servidor intermediário. O ESP32 busca os dados direto da internet.
+> Painel e-paper pessoal totalmente independente. Sem Home Assistant, sem MQTT, sem servidor intermediário. O ESP32 busca os dados direto da internet e desenha tudo no display.
 
 ![Painel em funcionamento](IMG_0528.png)
 
@@ -8,13 +8,13 @@
 
 ## O que exibe
 
-| Seção | Conteúdo |
+| Bloco | Conteúdo |
 |---|---|
-| Horário e data | NTP sincronizado, timezone configurável |
-| Clima atual | Temperatura, sensação térmica, umidade, vento |
-| Previsão | 3 dias com condição e min/máx |
-| Tarefas | Até 3 tarefas de hoje via Todoist |
-| Rodapé | USD/BRL, BTC/BRL e horário da última atualização |
+| Relógio e data | Horário grande sincronizado via NTP, data por extenso em pt-BR |
+| Cotações | USD/BRL, BTC/USD e BTC/BRL com separadores de milhar pt-BR |
+| Clima atual | Ícone MDI, temperatura em °C, descrição e umidade |
+| Calendário | Mês corrente com o dia de hoje destacado |
+| Previsão 5 dias | Dia da semana, ícone de condição, temperatura máxima e mínima |
 
 ---
 
@@ -53,18 +53,13 @@
 pip3 install esphome
 ```
 
-### 2. Fontes Roboto
+### 2. Fonte de ícones MDI
 
-Coloque na pasta `fonts/`:
-- `Roboto-Bold.ttf`
-- `Roboto-Regular.ttf`
-- `Roboto-Light.ttf`
+As fontes Roboto são baixadas automaticamente pelo ESPHome via `gfonts://`. Só é necessário baixar manualmente a fonte de ícones MDI:
 
 ```bash
-cd fonts
-curl -L "https://fonts.google.com/download?family=Roboto" -o roboto.zip
-unzip roboto.zip "Roboto/static/Roboto-Bold.ttf" "Roboto/static/Roboto-Regular.ttf" "Roboto/static/Roboto-Light.ttf" -d .
-mv Roboto/static/*.ttf . && rm -rf Roboto roboto.zip
+curl -L "https://raw.githubusercontent.com/Templarian/MaterialDesign-Webfont/master/fonts/materialdesignicons-webfont.ttf" \
+     -o fonts/materialdesignicons-webfont.ttf
 ```
 
 ---
@@ -85,7 +80,6 @@ wifi_password: "minha-senha"
 ap_password: "painel1234"
 api_key: "CHAVE_BASE64_32_BYTES="   # gerada abaixo
 ota_password: "qualquer-senha"
-todoist_token: ""                   # opcional — veja seção Tarefas
 ```
 
 Gere a `api_key`:
@@ -107,25 +101,12 @@ substitutions:
 
 ---
 
-## Tarefas via Todoist (opcional)
-
-1. Crie uma conta em [todoist.com](https://todoist.com) (gratuito)
-2. Acesse **Settings → Integrations → Developer** e copie o API token
-3. Adicione em `secrets.yaml`:
-
-```yaml
-todoist_token: "seu_token_aqui"
-```
-
-O painel exibe tarefas com vencimento para hoje ou atrasadas. Se o campo ficar vazio, a seção mostra "Nenhuma tarefa para hoje".
-
----
-
 ## Compilar e gravar
 
 ### Primeira vez (USB)
 
 ```bash
+python3 -m esphome compile painel.yaml
 python3 -m esphome upload painel.yaml --device /dev/cu.usbmodem1101   # macOS
 python3 -m esphome upload painel.yaml --device /dev/ttyUSB0           # Linux
 ```
@@ -133,8 +114,11 @@ python3 -m esphome upload painel.yaml --device /dev/ttyUSB0           # Linux
 ### Atualizações seguintes (Wi-Fi, sem cabo)
 
 ```bash
+python3 -m esphome compile painel.yaml
 python3 -m esphome upload painel.yaml --device painel-pessoal.local
 ```
+
+> **Dica:** sempre rode o `compile` antes do `upload` para garantir que o firmware mais recente seja enviado.
 
 ---
 
@@ -144,10 +128,10 @@ python3 -m esphome upload painel.yaml --device painel-pessoal.local
 Boot
  └─ Conecta ao Wi-Fi
  └─ Sincroniza horário via NTP
- └─ Aguarda 12s → busca clima, cotações e tarefas
+ └─ Aguarda 12s → busca clima (atual + previsão 5 dias) e cotações em paralelo
  └─ Desenha o painel no e-paper
 
-A cada 60 segundos  → atualiza o display
+A cada 60 segundos  → redesenha o display (atualiza o relógio)
 A cada 20 minutos   → busca novos dados da internet
 ```
 
@@ -157,15 +141,14 @@ A cada 20 minutos   → busca novos dados da internet
 
 | Dado | API | Custo |
 |---|---|---|
-| Clima | [Open-Meteo](https://open-meteo.com/) | Gratuito, sem cadastro |
-| Cotações | [AwesomeAPI](https://docs.awesomeapi.com.br/) | Gratuito, sem cadastro |
-| Tarefas | [Todoist REST API v1](https://developer.todoist.com/rest/v1/) | Gratuito (plano pessoal) |
+| Clima atual + previsão | [Open-Meteo](https://open-meteo.com/) | Gratuito, sem cadastro |
+| Cotações USD e BTC | [AwesomeAPI](https://docs.awesomeapi.com.br/) | Gratuito, sem cadastro |
 
 ---
 
 ## Personalização
 
-### Mudar frequência de atualização
+### Mudar frequência de atualização dos dados
 
 ```yaml
 interval:
@@ -183,8 +166,23 @@ O layout fica na seção `lambda:` do componente `display`. Consulte a [document
 ### Tela não atualiza / fica branca
 
 - Verifique a fiação (especialmente DC e BUSY)
-- Confirme `model: 7.5inV2rev2` no `painel.yaml`
+- Confirme `model: 7.50inv2` no `painel.yaml`
 - Habilite logs: `logger: level: DEBUG`
+
+### Ícones aparecem como letras (N, S, R…)
+
+O arquivo `fonts/materialdesignicons-webfont.ttf` está corrompido ou ausente. Baixe novamente:
+
+```bash
+curl -L "https://raw.githubusercontent.com/Templarian/MaterialDesign-Webfont/master/fonts/materialdesignicons-webfont.ttf" \
+     -o fonts/materialdesignicons-webfont.ttf
+```
+
+Confirme o tamanho (~1,2 MB):
+
+```bash
+ls -lh fonts/materialdesignicons-webfont.ttf
+```
 
 ### Clima/cotações não carregam (ESPHome 2025.2.2)
 
@@ -192,7 +190,12 @@ O ESPHome 2025.2.2 tem um bug: APIs que usam `Transfer-Encoding: chunked` (sem `
 
 **Fix:** aplique o patch nos dois arquivos do pacote instalado:
 
-**`http_request.h`** — troque a linha com `max_length`:
+```bash
+python3 -c "import esphome; print(esphome.__path__[0])"
+# → ex: /Users/usuario/Library/Python/3.9/lib/python/site-packages/esphome
+```
+
+**`components/http_request/http_request.h`** — troque a linha com `max_length`:
 ```cpp
 // De:
 size_t max_length = std::min(content_length, this->max_response_buffer_size_);
@@ -205,7 +208,7 @@ size_t max_length = content_length > 0
 
 E adicione `if (read <= 0) break;` dentro do loop de leitura, antes de `read_index += read`.
 
-**`http_request_idf.cpp`** — troque a linha com `bufsize`:
+**`components/http_request/http_request_idf.cpp`** — troque a linha com `bufsize`:
 ```cpp
 // De:
 int bufsize = std::min(max_len, this->content_length - this->bytes_read_);
@@ -218,18 +221,9 @@ int bufsize = this->content_length > 0
 
 E troque `this->bytes_read_ += read_len;` por `if (read_len > 0) this->bytes_read_ += read_len;`.
 
-Os arquivos ficam em:
-```
-$(python3 -c "import esphome; print(esphome.__path__[0])")/components/http_request/
-```
-
 ### Device não responde na porta USB
 
 O XIAO tem uma porta USB-C. Use um **carregador USB** para alimentação normal e o cabo USB-C de dados apenas para gravar o firmware. Notebook USB pode causar brownout durante a inicialização do Wi-Fi.
-
-### Tarefas retornam erro 410
-
-A API Todoist v2 (`/rest/v2/tasks`) foi depreciada. Use a v1 (`/api/v1/tasks`) — já configurada neste repositório.
 
 ---
 
