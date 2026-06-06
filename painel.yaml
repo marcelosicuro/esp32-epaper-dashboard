@@ -96,14 +96,55 @@ globals:
     type: int
     restore_value: false
     initial_value: '-1'
+  - id: g_temp
+    type: float
+    restore_value: false
+    initial_value: '0.0'
+  - id: g_humidity
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: g_weather_code
+    type: int
+    restore_value: false
+    initial_value: '-1'
+  - id: g_weather_ok
+    type: bool
+    restore_value: false
+    initial_value: 'false'
 
 script:
   - id: fetch_all
     mode: single
     then:
+      - script.execute: fetch_weather
       - script.execute: fetch_rates
+      - script.wait:   fetch_weather
       - script.wait:   fetch_rates
       - component.update: epaper_display
+
+  - id: fetch_weather
+    mode: single
+    then:
+      - http_request.get:
+          url: "https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,weather_code&timezone=auto"
+          headers:
+            Accept-Encoding: identity
+          capture_response: true
+          on_response:
+            then:
+              - lambda: |-
+                  if (response->status_code != 200) return;
+                  json::parse_json(body, [](JsonObject root) -> bool {
+                    auto cur = root["current"];
+                    if (cur.isNull()) return false;
+                    id(g_temp)         = cur["temperature_2m"].as<float>();
+                    id(g_humidity)     = cur["relative_humidity_2m"].as<int>();
+                    id(g_weather_code) = cur["weather_code"].as<int>();
+                    id(g_weather_ok)   = true;
+                    ESP_LOGI("clima", "OK: code=%d temp=%.1f umid=%d", id(g_weather_code), id(g_temp), id(g_humidity));
+                    return true;
+                  });
 
   - id: fetch_rates
     mode: single
@@ -162,12 +203,27 @@ font:
   - file: "gfonts://Roboto"
     id: font_small
     size: 16
-    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%-"
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%-àáéíóúâêîôûãõç"
 
   - file: "gfonts://Roboto@300"
     id: font_date
     size: 26
     glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%$-_()çãõáéíóúâêîôûàèìòùäëïöü"
+
+  - file: "fonts/materialdesignicons-webfont.ttf"
+    id: font_weather_icon
+    size: 72
+    glyphs:
+      - "\U000F0590"  # weather-cloudy
+      - "\U000F0591"  # weather-fog
+      - "\U000F0593"  # weather-lightning
+      - "\U000F0595"  # weather-partly-cloudy
+      - "\U000F0596"  # weather-pouring
+      - "\U000F0597"  # weather-rainy
+      - "\U000F0598"  # weather-snowy
+      - "\U000F0599"  # weather-sunny
+      - "\U000F067E"  # weather-lightning-rainy
+      - "\U000F067F"  # weather-snowy-rainy
 
 spi:
   clk_pin:  ${spi_clk}
@@ -267,19 +323,64 @@ display:
       }
 
       // ══════════════════════════════════════════════════════════════════
-      // DIREITA: COTAÇÕES em DESTAQUE
+      // DIREITA: CLIMA + COTAÇÕES
       // ══════════════════════════════════════════════════════════════════
-      const int RX = 440;
-      const int RY = 180;
+      const int RX = 450;
+      const int RY = 165;
+
+      auto wmo_icon = [](int code) -> const char* {
+        if (code <= 1)                return "\U000F0599"; // sunny
+        if (code == 2)                return "\U000F0595"; // partly cloudy
+        if (code == 3)                return "\U000F0590"; // cloudy
+        if (code == 45 || code == 48) return "\U000F0591"; // fog
+        if (code >= 51 && code <= 57) return "\U000F0597"; // drizzle
+        if (code >= 61 && code <= 67) return "\U000F0596"; // rain
+        if (code >= 71 && code <= 77) return "\U000F0598"; // snow
+        if (code >= 80 && code <= 82) return "\U000F0596"; // showers
+        if (code >= 85 && code <= 86) return "\U000F067F"; // snow showers
+        if (code >= 95)               return "\U000F067E"; // thunderstorm
+        return "\U000F0590";
+      };
+
+      auto wmo_desc = [](int code) -> const char* {
+        if (code == 0)                return "Ceu limpo";
+        if (code == 1)                return "Principalmente limpo";
+        if (code == 2)                return "Parcialmente nublado";
+        if (code == 3)                return "Encoberto";
+        if (code == 45 || code == 48) return "Neblina";
+        if (code >= 51 && code <= 57) return "Garoa";
+        if (code >= 61 && code <= 67) return "Chuva";
+        if (code >= 71 && code <= 77) return "Neve";
+        if (code >= 80 && code <= 82) return "Aguaceiro";
+        if (code >= 85 && code <= 86) return "Neve leve";
+        if (code >= 95)               return "Trovoada";
+        return "Nublado";
+      };
+
+      it.line(430, 155, 430, H);
+
+      if (id(g_weather_ok)) {
+        it.printf(RX, RY, id(font_weather_icon), TextAlign::TOP_LEFT,
+                  "%s", wmo_icon(id(g_weather_code)));
+        char buf_temp[16];
+        snprintf(buf_temp, sizeof(buf_temp), "%.0f C", id(g_temp));
+        it.printf(RX + 82, RY + 15, id(font_rates_big), TextAlign::TOP_LEFT, "%s", buf_temp);
+        it.printf(RX, RY + 82, id(font_body), TextAlign::TOP_LEFT,
+                  "%s - %d%% umid.", wmo_desc(id(g_weather_code)), id(g_humidity));
+      } else {
+        it.printf(RX, RY + 20, id(font_body), TextAlign::TOP_LEFT, "Buscando clima...");
+      }
+
+      it.line(430, 280, W, 280);
 
       if (id(g_rates_ok)) {
         char buf_usd[32];
         snprintf(buf_usd, sizeof(buf_usd), "$ %.2f", id(g_usd_brl));
-        it.printf(RX, RY, id(font_rates_big), TextAlign::TOP_LEFT, "%s", buf_usd);
+        it.printf(RX, RY + 125, id(font_rates_big), TextAlign::TOP_LEFT, "%s", buf_usd);
 
         char buf_btc[32];
         snprintf(buf_btc, sizeof(buf_btc), "BTC %.0f", id(g_btc_brl));
-        it.printf(RX, RY + 70, id(font_rates_big), TextAlign::TOP_LEFT, "%s", buf_btc);
+        it.printf(RX, RY + 185, id(font_rates_big), TextAlign::TOP_LEFT, "%s", buf_btc);
       }
 
       // ══════════════════════════════════════════════════════════════════
