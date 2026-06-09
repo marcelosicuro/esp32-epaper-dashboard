@@ -52,6 +52,23 @@ api:
   encryption:
     key: !secret api_key
 
+sensor:
+  - platform: internal_temperature
+    id: cpu_temp_sensor
+    name: "CPU Temperature"
+    update_interval: 60s
+
+  - platform: wifi_signal
+    id: wifi_rssi_sensor
+    name: "WiFi RSSI"
+    update_interval: 60s
+
+  - platform: uptime
+    id: uptime_sensor
+    name: "Uptime"
+    unit_of_measurement: "s"
+    update_interval: 60s
+
 time:
   - platform: sntp
     id: sntp_time
@@ -267,6 +284,14 @@ font:
       - "\U000F067F"  # weather-snowy-rainy
 
   - file: "fonts/materialdesignicons-webfont.ttf"
+    id: font_device_icon
+    size: 24
+    glyphs:
+      - "\U000F050F"  # thermometer (CPU temp)
+      - "\U000F05A9"  # wifi
+      - "\U000F0238"  # timer (uptime)
+
+  - file: "fonts/materialdesignicons-webfont.ttf"
     id: font_weather_icon
     size: 72
     glyphs:
@@ -307,9 +332,50 @@ display:
       }
 
       // ══════════════════════════════════════════════════════════════════
-      // TOPO: Data/Hora
+      // TOPO: 3 colunas — Dispositivo | Relógio | Cotações
       // ══════════════════════════════════════════════════════════════════
-      it.strftime(PAD, 15, id(font_clock), TextAlign::TOP_LEFT, "%H:%M", now);
+
+      // Divisórias verticais do topo
+      it.line(267, 0, 267, 155);
+      it.line(533, 0, 533, 155);
+
+      // ── ESQUERDA (0–267): info do dispositivo ──────────────────────
+      {
+        const int DX_IC = PAD;
+        const int DX_TX = PAD + 32;
+        const int DY1 = 18;
+        const int DY2 = 56;
+        const int DY3 = 94;
+
+        // CPU temp
+        it.printf(DX_IC, DY1, id(font_device_icon), TextAlign::TOP_LEFT, "\U000F050F");
+        if (!isnan(id(cpu_temp_sensor).state))
+          it.printf(DX_TX, DY1 + 1, id(font_body), TextAlign::TOP_LEFT,
+                    "%.0f°C CPU", id(cpu_temp_sensor).state);
+
+        // WiFi RSSI
+        it.printf(DX_IC, DY2, id(font_device_icon), TextAlign::TOP_LEFT, "\U000F05A9");
+        if (!isnan(id(wifi_rssi_sensor).state))
+          it.printf(DX_TX, DY2 + 1, id(font_body), TextAlign::TOP_LEFT,
+                    "%.0f dBm", id(wifi_rssi_sensor).state);
+
+        // Uptime
+        it.printf(DX_IC, DY3, id(font_device_icon), TextAlign::TOP_LEFT, "\U000F0238");
+        if (!isnan(id(uptime_sensor).state)) {
+          int ups = (int)id(uptime_sensor).state;
+          int upd = ups / 86400;
+          int uph = (ups % 86400) / 3600;
+          int upm = (ups % 3600) / 60;
+          char upbuf[16];
+          if (upd > 0)      snprintf(upbuf, sizeof(upbuf), "%dd %dh", upd, uph);
+          else if (uph > 0) snprintf(upbuf, sizeof(upbuf), "%dh %dm", uph, upm);
+          else               snprintf(upbuf, sizeof(upbuf), "%dm", upm);
+          it.printf(DX_TX, DY3 + 1, id(font_body), TextAlign::TOP_LEFT, "%s online", upbuf);
+        }
+      }
+
+      // ── CENTRO (267–533): Relógio + Data ───────────────────────────
+      it.strftime(W/2, 15, id(font_clock), TextAlign::TOP_CENTER, "%H:%M", now);
 
       const char* dias[]  = {"Dom","Seg","Ter","Qua","Qui","Sex","Sab"};
       const char* meses[] = {"jan","fev","mar","abr","mai","jun",
@@ -318,7 +384,7 @@ display:
       snprintf(data_buf, sizeof(data_buf), "%s, %02d de %s de %04d",
                dias[now.day_of_week - 1], now.day_of_month,
                meses[now.month - 1], now.year);
-      it.printf(PAD, 108, id(font_date), TextAlign::TOP_LEFT, "%s", data_buf);
+      it.printf(W/2, 108, id(font_date), TextAlign::TOP_CENTER, "%s", data_buf);
 
       if (id(g_rates_ok)) {
         const int RR = W - PAD;  // borda direita
