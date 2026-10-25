@@ -2,7 +2,7 @@
 
 > Painel e-paper pessoal totalmente independente. Sem Home Assistant, sem MQTT, sem servidor intermediário. O ESP32 busca os dados direto da internet e desenha tudo no display.
 
-![Painel em funcionamento](IMG_0528.png)
+![Layout do painel (captura do simulador)](painel.png)
 
 ---
 
@@ -11,10 +11,11 @@
 | Bloco | Conteúdo |
 |---|---|
 | Relógio e data | Horário grande sincronizado via NTP, data por extenso em pt-BR |
+| Dispositivo | Temperatura da CPU, sinal Wi-Fi e uptime |
 | Cotações | USD/BRL, BTC/USD e BTC/BRL com separadores de milhar pt-BR |
 | Clima atual | Ícone MDI, temperatura em °C, descrição e umidade |
-| Calendário | Mês corrente com o dia de hoje destacado |
 | Previsão 5 dias | Dia da semana, ícone de condição, temperatura máxima e mínima |
+| Gráficos de 30 dias | Evolução de USD/BRL e BTC/BRL, com máximo, mínimo e variação no período |
 
 ---
 
@@ -128,7 +129,7 @@ python3 -m esphome upload painel.yaml --device painel-pessoal.local
 Boot
  └─ Conecta ao Wi-Fi
  └─ Sincroniza horário via NTP
- └─ Aguarda 12s → busca clima (atual + previsão 5 dias) e cotações em paralelo
+ └─ Aguarda 12s → busca clima (atual + previsão 5 dias), cotações e histórico de 30 dias
  └─ Desenha o painel no e-paper
 
 A cada 60 segundos  → redesenha o display (atualiza o relógio)
@@ -143,6 +144,7 @@ A cada 20 minutos   → busca novos dados da internet
 |---|---|---|
 | Clima atual + previsão | [Open-Meteo](https://open-meteo.com/) | Gratuito, sem cadastro |
 | Cotações USD e BTC | [AwesomeAPI](https://docs.awesomeapi.com.br/) | Gratuito, sem cadastro |
+| Histórico de 30 dias (gráficos) | [AwesomeAPI](https://docs.awesomeapi.com.br/) `/json/daily/` | Gratuito, sem cadastro |
 
 ---
 
@@ -158,6 +160,22 @@ interval:
 ### Ajustar layout
 
 O layout fica na seção `lambda:` do componente `display`. Consulte a [documentação do ESPHome Display](https://esphome.io/components/display/index.html).
+
+### Simulador no Mac (testar o layout sem gravar no ESP32)
+
+O `simular.sh` compila o mesmo código de tela como programa nativo e abre uma janela de 800×480 com tinta preta sobre papel branco, usando as APIs reais de clima e cotações. Assim dá para iterar no layout sem gravar no ESP32.
+
+```bash
+brew install sdl2 python@3.12
+python3.12 -m venv .venv-sim && .venv-sim/bin/pip install esphome
+./simular.sh
+```
+
+- O `gerar_simulador.py` monta o `simulador.yaml` a partir do `painel.yaml` (edite sempre o `painel.yaml`).
+- `sim_epaper.h` inverte as cores para imitar o e-paper e só cobre `printf`, `strftime`, `line` e `filled_rectangle`; se o layout usar outro método de desenho, estenda o arquivo.
+- `sim_http.h` busca os dados com `curl`, porque o `http_request` nativo do ESPHome não compila no macOS.
+- Sensores de CPU e Wi-Fi aparecem com valores fixos. Refresh lento e ghosting do e-paper não são simulados.
+- A janela pode abrir atrás de outros apps (procure o app `program` com Cmd-Tab).
 
 ---
 
@@ -220,6 +238,10 @@ int bufsize = this->content_length > 0
 ```
 
 E troque `this->bytes_read_ += read_len;` por `if (read_len > 0) this->bytes_read_ += read_len;`.
+
+### Gráficos mostram "Sem historico"
+
+O `http_request.get` guarda só 1 kB da resposta por padrão e o histórico tem ~4 kB, então o JSON chega cortado (`JSON parse error: IncompleteInput`). As buscas de histórico já usam `max_response_buffer_size: 8kB`; se trocar a API ou aumentar o período, aumente esse valor.
 
 ### Device não responde na porta USB
 
