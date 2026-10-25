@@ -2,7 +2,15 @@
 
 > Painel e-paper pessoal totalmente independente. Sem Home Assistant, sem MQTT, sem servidor intermediário. O ESP32 busca os dados direto da internet e desenha tudo no display.
 
-![Layout do painel (captura do simulador)](painel.png)
+<p align="center">
+  <img src="painel.png" alt="Layout do painel, captura do simulador" width="720"><br>
+  <em>Layout do painel — captura do simulador no Mac (janela 800×480)</em>
+</p>
+
+<p align="center">
+  <img src="painel-foto.jpg" alt="Painel real: Seeed XIAO ESP32-C3 com Waveshare 7.5 e-Paper" width="720"><br>
+  <em>Painel em funcionamento — Seeed XIAO ESP32-C3 + Waveshare 7.5" e-Paper V2</em>
+</p>
 
 ---
 
