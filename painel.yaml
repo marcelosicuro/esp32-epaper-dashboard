@@ -238,16 +238,18 @@ script:
     then:
       - http_request.get:
           url: "https://economia.awesomeapi.com.br/json/daily/USD-BRL/30"
+          max_response_buffer_size: 8kB
           headers:
             Accept-Encoding: identity
           capture_response: true
           on_response:
             then:
               - lambda: |-
+                  ESP_LOGI("hist", "usd http=%d body=%d bytes", response->status_code, (int) body.size());
                   if (response->status_code != 200) return;
                   // a resposta é uma lista; embrulha num objeto p/ usar json::parse_json
                   std::string wrapped = "{\"a\":" + body + "}";
-                  json::parse_json(wrapped, [](JsonObject root) -> bool {
+                  bool ok_usd = json::parse_json(wrapped, [](JsonObject root) -> bool {
                     JsonArray arr = root["a"].as<JsonArray>();
                     int n = arr.size() < 30 ? (int) arr.size() : 30;
                     // a API devolve do mais novo para o mais antigo
@@ -256,18 +258,21 @@ script:
                     id(g_usd_n) = n;
                     return true;
                   });
+                  ESP_LOGI("hist", "usd parse=%d n=%d", ok_usd, id(g_usd_n));
       - http_request.get:
           url: "https://economia.awesomeapi.com.br/json/daily/BTC-BRL/30"
+          max_response_buffer_size: 8kB
           headers:
             Accept-Encoding: identity
           capture_response: true
           on_response:
             then:
               - lambda: |-
+                  ESP_LOGI("hist", "btc http=%d body=%d bytes", response->status_code, (int) body.size());
                   if (response->status_code != 200) return;
                   // a resposta é uma lista; embrulha num objeto p/ usar json::parse_json
                   std::string wrapped = "{\"a\":" + body + "}";
-                  json::parse_json(wrapped, [](JsonObject root) -> bool {
+                  bool ok_btc = json::parse_json(wrapped, [](JsonObject root) -> bool {
                     JsonArray arr = root["a"].as<JsonArray>();
                     int n = arr.size() < 30 ? (int) arr.size() : 30;
                     for (int i = 0; i < n; i++)
@@ -275,6 +280,7 @@ script:
                     id(g_btc_n) = n;
                     return true;
                   });
+                  ESP_LOGI("hist", "btc parse=%d n=%d", ok_btc, id(g_btc_n));
 
 font:
   - file: "gfonts://Roboto@700"
