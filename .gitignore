@@ -4,3 +4,5 @@ companion/config.yaml
 build/
 __pycache__/
 *.pyc
+/.venv-sim/
+/simulador.yaml

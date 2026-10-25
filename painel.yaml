@@ -145,6 +145,23 @@ globals:
     type: bool
     restore_value: false
     initial_value: 'false'
+  # histórico diário (mais antigo -> mais recente) para os gráficos
+  - id: g_usd_hist
+    type: float[30]
+    restore_value: false
+    initial_value: "{0.0f}"
+  - id: g_usd_n
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: g_btc_hist
+    type: float[30]
+    restore_value: false
+    initial_value: "{0.0f}"
+  - id: g_btc_n
+    type: int
+    restore_value: false
+    initial_value: '0'
 
 script:
   - id: fetch_all
@@ -152,8 +169,10 @@ script:
     then:
       - script.execute: fetch_weather
       - script.execute: fetch_rates
+      - script.execute: fetch_history
       - script.wait:   fetch_weather
       - script.wait:   fetch_rates
+      - script.wait:   fetch_history
       - component.update: epaper_display
 
   - id: fetch_weather
@@ -214,16 +233,54 @@ script:
                     return true;
                   });
 
+  - id: fetch_history
+    mode: single
+    then:
+      - http_request.get:
+          url: "https://economia.awesomeapi.com.br/json/daily/USD-BRL/30"
+          headers:
+            Accept-Encoding: identity
+          capture_response: true
+          on_response:
+            then:
+              - lambda: |-
+                  if (response->status_code != 200) return;
+                  // a resposta é uma lista; embrulha num objeto p/ usar json::parse_json
+                  std::string wrapped = "{\"a\":" + body + "}";
+                  json::parse_json(wrapped, [](JsonObject root) -> bool {
+                    JsonArray arr = root["a"].as<JsonArray>();
+                    int n = arr.size() < 30 ? (int) arr.size() : 30;
+                    // a API devolve do mais novo para o mais antigo
+                    for (int i = 0; i < n; i++)
+                      id(g_usd_hist)[n - 1 - i] = atof(arr[i]["bid"].as<const char*>());
+                    id(g_usd_n) = n;
+                    return true;
+                  });
+      - http_request.get:
+          url: "https://economia.awesomeapi.com.br/json/daily/BTC-BRL/30"
+          headers:
+            Accept-Encoding: identity
+          capture_response: true
+          on_response:
+            then:
+              - lambda: |-
+                  if (response->status_code != 200) return;
+                  // a resposta é uma lista; embrulha num objeto p/ usar json::parse_json
+                  std::string wrapped = "{\"a\":" + body + "}";
+                  json::parse_json(wrapped, [](JsonObject root) -> bool {
+                    JsonArray arr = root["a"].as<JsonArray>();
+                    int n = arr.size() < 30 ? (int) arr.size() : 30;
+                    for (int i = 0; i < n; i++)
+                      id(g_btc_hist)[n - 1 - i] = atof(arr[i]["bid"].as<const char*>());
+                    id(g_btc_n) = n;
+                    return true;
+                  });
+
 font:
   - file: "gfonts://Roboto@700"
     id: font_clock
     size: 78
     glyphs: "0123456789:"
-
-  - file: "gfonts://Roboto@700"
-    id: font_calendar_day
-    size: 34
-    glyphs: "0123456789"
 
   - file: "gfonts://Roboto"
     id: font_calendar_label
@@ -261,7 +318,7 @@ font:
   - file: "gfonts://Roboto"
     id: font_small
     size: 16
-    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%-àáéíóúâêîôûãõç"
+    glyphs: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,:/°%+-àáéíóúâêîôûãõç"
 
   - file: "gfonts://Roboto@700"
     id: font_date
@@ -336,10 +393,10 @@ display:
       // ══════════════════════════════════════════════════════════════════
 
       // Divisórias verticais do topo
-      it.line(267, 0, 267, 155);
-      it.line(533, 0, 533, 155);
+      it.line(235, 0, 235, 155);
+      it.line(565, 0, 565, 155);
 
-      // ── ESQUERDA (0–267): info do dispositivo ──────────────────────
+      // ── ESQUERDA (0–235): info do dispositivo ──────────────────────
       {
         const int DX_IC = PAD;
         const int DX_TX = PAD + 32;
@@ -374,7 +431,7 @@ display:
         }
       }
 
-      // ── CENTRO (267–533): Relógio + Data ───────────────────────────
+      // ── CENTRO (235–565): Relógio + Data ───────────────────────────
       it.strftime(W/2, 15, id(font_clock), TextAlign::TOP_CENTER, "%H:%M", now);
 
       const char* dias[]  = {"Dom","Seg","Ter","Qua","Qui","Sex","Sab"};
@@ -426,64 +483,13 @@ display:
       }
 
       it.line(0, 155, W, 155);
+      it.line(430, 155, 430, H);
 
       // ══════════════════════════════════════════════════════════════════
-      // ESQUERDA: CALENDÁRIO do mês
+      // ESQUERDA: CLIMA (atual + previsão 5 dias)
       // ══════════════════════════════════════════════════════════════════
-      const int CAL_X = 65;   // centralizado em coluna de 430px: (430-350)/2 + 25
-      const int CAL_CENTER = 215;
-      const int CAL_Y = 180;
-      const int DAY_SIZE = 50;
-      const int DAY_SPACING = 50;
-
-      // Dias da semana (Dom-Sab)
-      const char* weekdays[] = {"Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab"};
-      int wx = CAL_X;
-      for (int i = 0; i < 7; i++) {
-        it.printf(wx, CAL_Y, id(font_small), TextAlign::TOP_CENTER, "%s", weekdays[i]);
-        wx += DAY_SPACING;
-      }
-
-      // Calcular dias do mês
-      int days_in_month[] = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-      int month_days = days_in_month[now.month];
-      if (now.month == 2 && ((now.year % 4 == 0 && now.year % 100 != 0) || (now.year % 400 == 0)))
-        month_days = 29;
-
-      // Calcular primeiro dia da semana do mês
-      struct tm timeinfo = {};
-      timeinfo.tm_year = now.year - 1900;
-      timeinfo.tm_mon = now.month - 1;
-      timeinfo.tm_mday = 1;
-      mktime(&timeinfo);
-      int first_dow = timeinfo.tm_wday;
-
-      // Desenhar dias do mês
-      int day = 1;
-      int x_pos = CAL_X + (first_dow * DAY_SPACING);
-      int y_pos = CAL_Y + 45;
-
-      for (int d = 1; d <= month_days; d++) {
-        if (x_pos > CAL_X + (6 * DAY_SPACING)) {
-          x_pos = CAL_X;
-          y_pos += 55;
-        }
-
-        if (d == now.day_of_month) {
-          it.filled_rectangle(x_pos - 18, y_pos - 18, 36, 40);
-          it.printf(x_pos, y_pos, id(font_calendar_day), Color(0, 0, 0), TextAlign::CENTER, "%d", d);
-        } else {
-          it.printf(x_pos, y_pos, id(font_calendar_day), TextAlign::CENTER, "%d", d);
-        }
-
-        x_pos += DAY_SPACING;
-      }
-
-      // ══════════════════════════════════════════════════════════════════
-      // DIREITA: CLIMA
-      // ══════════════════════════════════════════════════════════════════
-      const int RX = 450;
-      const int RY = 165;
+      const int RX = PAD;
+      const int RY = 172;
 
       auto wmo_icon = [](int code) -> const char* {
         if (code <= 1)                return "\U000F0599"; // sunny
@@ -514,8 +520,6 @@ display:
         return "Nublado";
       };
 
-      it.line(430, 155, 430, H);
-
       if (id(g_weather_ok)) {
         it.printf(RX, RY, id(font_weather_icon), TextAlign::TOP_LEFT,
                   "%s", wmo_icon(id(g_weather_code)));
@@ -530,16 +534,16 @@ display:
 
       // Previsão 5 dias
       if (id(g_fc_ok)) {
-        it.line(430, 278, 800, 278);
+        it.line(0, 292, 430, 292);
 
         const char* wd3[] = {"Dom","Seg","Ter","Qua","Qui","Sex","Sab"};
         int today_dow = now.day_of_week - 1;  // 0=Dom
 
-        const int FC_Y  = 288;
-        const int COL_W = 74;  // (800-430)/5
+        const int FC_Y  = 306;
+        const int COL_W = 86;  // 430/5
 
         for (int i = 0; i < 5; i++) {
-          int cx  = 430 + COL_W * i + COL_W / 2;
+          int cx  = COL_W * i + COL_W / 2;
           int dow = (today_dow + i + 1) % 7;
           char fc_buf[10];
 
@@ -554,9 +558,73 @@ display:
       }
 
       // ══════════════════════════════════════════════════════════════════
-      // RODAPÉ: Última atualização
+      // DIREITA: GRÁFICOS 30 dias — USD/BRL e BTC/BRL
+      // ══════════════════════════════════════════════════════════════════
+      // valor com milhar pt-BR; dec=true usa 2 casas decimais (ex: 5,87)
+      auto fmt_val = [](char* b, size_t s, float v, bool dec) {
+        if (dec) {
+          snprintf(b, s, "%.2f", v);
+          for (char* c = b; *c; c++) if (*c == '.') *c = ',';
+          return;
+        }
+        long l = (long)(v + 0.5f);
+        if (l >= 1000000L)
+          snprintf(b, s, "%ld.%03ld.%03ld", l/1000000L, (l/1000L)%1000L, l%1000L);
+        else if (l >= 1000L)
+          snprintf(b, s, "%ld.%03ld", l/1000L, l%1000L);
+        else
+          snprintf(b, s, "%ld", l);
+      };
+
+      auto draw_chart = [&](int top, const char* title, const float* d, int n, bool dec) {
+        const int X0 = 450, X1 = 705, LX = W - PAD;
+        const int PT = top + 40, PB = top + 140;
+        it.printf(X0, top + 8, id(font_body_bold), TextAlign::TOP_LEFT, "%s", title);
+        if (n < 2) {
+          it.printf(X0, top + 70, id(font_small), TextAlign::TOP_LEFT, "Sem historico");
+          return;
+        }
+        float lo = d[0], hi = d[0];
+        for (int i = 1; i < n; i++) { if (d[i] < lo) lo = d[i]; if (d[i] > hi) hi = d[i]; }
+        float span = hi - lo;
+        if (span < 1e-6f) span = 1.0f;
+        float plo = lo - span * 0.08f;
+        float pspan = span * 1.16f;
+
+        int px = 0, py = 0;
+        for (int i = 0; i < n; i++) {
+          int x = X0 + (X1 - X0) * i / (n - 1);
+          int y = PB - (int)((d[i] - plo) / pspan * (PB - PT));
+          if (i > 0) {
+            it.line(px, py, x, y);
+            it.line(px, py + 1, x, y + 1);
+          }
+          px = x; py = y;
+        }
+        it.filled_rectangle(px - 3, py - 3, 7, 7);  // ponto mais recente
+
+        char b1[24], b2[24];
+        fmt_val(b1, sizeof(b1), hi, dec);
+        fmt_val(b2, sizeof(b2), lo, dec);
+        it.printf(LX, PT - 2, id(font_small), TextAlign::TOP_RIGHT, "%s", b1);
+        it.printf(LX, PB + 2, id(font_small), TextAlign::BOTTOM_RIGHT, "%s", b2);
+
+        char pct[16];
+        snprintf(pct, sizeof(pct), "%+.1f%%", (d[n-1] / d[0] - 1.0f) * 100.0f);
+        for (char* c = pct; *c; c++) if (*c == '.') *c = ',';
+        it.printf(LX, top + 11, id(font_small), TextAlign::TOP_RIGHT, "%s em %d dias", pct, n);
+      };
+
+      float tmp_usd[30], tmp_btc[30];
+      for (int i = 0; i < 30; i++) { tmp_usd[i] = id(g_usd_hist)[i]; tmp_btc[i] = id(g_btc_hist)[i]; }
+      draw_chart(155, "USD/BRL", tmp_usd, id(g_usd_n), true);
+      it.line(430, 318, W, 318);
+      draw_chart(318, "BTC/BRL", tmp_btc, id(g_btc_n), false);
+
+      // ══════════════════════════════════════════════════════════════════
+      // RODAPÉ: Última atualização (canto inferior esquerdo)
       // ══════════════════════════════════════════════════════════════════
       if (id(g_upd_h) >= 0) {
-        it.printf(W - PAD, H - 15, id(font_small), TextAlign::BOTTOM_RIGHT,
+        it.printf(PAD, H - 15, id(font_small), TextAlign::BOTTOM_LEFT,
                   "atualizado às %02d:%02d", id(g_upd_h), id(g_upd_m));
       }
