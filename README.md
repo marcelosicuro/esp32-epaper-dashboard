@@ -122,6 +122,41 @@ python3 -m esphome upload painel.yaml --device painel-pessoal.local
 
 ---
 
+## Simulador no Mac
+
+Mostra o painel numa janela de 800x480, sem gravar nada no aparelho. O layout vem do próprio `painel.yaml`, então existe um único lugar para editar.
+
+**Instalar (uma vez):**
+
+```bash
+simulador/instalar.sh
+```
+
+Instala SDL2, OpenSSL e um ambiente Python só para o simulador (`.venv-sim`). Não mexe no ESPHome que você usa para gravar o aparelho.
+
+**Usar:**
+
+```bash
+simulador/rodar.sh
+```
+
+Edite o `painel.yaml` e salve. A janela fecha e abre de novo com o resultado. A primeira compilação demora mais. As seguintes são mais rápidas.
+
+Outras opções: `--so-gerar` apenas gera o YAML do simulador. `--uma-vez` roda sem observar mudanças.
+
+**Como funciona:** o `simulador/gerar.py` lê o `painel.yaml` e cria o `painel-sim.generated.yaml` (não edite, ele é refeito a cada execução). Só o que depende do hardware muda: o display Waveshare vira uma janela SDL e o relógio vem do Mac. O `simulador/epaper_view.h` inverte as cores, porque no e-paper a tinta é preta sobre papel branco e na janela seria o contrário.
+
+**O que é diferente do aparelho:**
+
+| Item | No simulador |
+|---|---|
+| Clima e cotações | Dados reais, pelas mesmas APIs |
+| Temperatura da CPU e Wi-Fi | Valores fixos (45 °C e -58 dBm), em `simulador/gerar.py` |
+| Atualização da tela | A janela redesenha a cada 5 s. O e-paper real leva alguns segundos e pode deixar rastro |
+| Versão do ESPHome | A mais recente, porque a 2025.2.2 não tem `http_request` para Mac. A opção `headers` é adaptada para `request_headers` automaticamente |
+
+---
+
 ## Como funciona
 
 ```
